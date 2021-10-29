@@ -64,7 +64,7 @@
 
   <Target Name="DeployPlugin" AfterTargets="TcBuildTarget">
     <Message Text="Deploy plugin" />
-    <Unzip SourceFiles="$(OutputPath)\out\TcPlugin.AzureBlobStorage.zip " DestinationFolder="..\..\tc\Plugins\wfx\FsAzureStorage" OverwriteReadOnlyFiles="true" />
+    <Unzip SourceFiles="$(OutputPath)\out\TcPlugin.AzureBlobStorage.zip " DestinationFolder="..\..\tc\Plugins\wfx\TcPlugin.AzureBlobStorage" OverwriteReadOnlyFiles="true" />
   </Target>
 
 </Project>
