@@ -1,0 +1,23 @@
+﻿<Window x:Class="TcPlugin.AzureBlobStorage.EnterConnectionInfoWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" WindowStyle="SingleBorderWindow" WindowState="Normal" WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Title="Connect to..." Height="131.865" Width="600">
+    <Grid>
+        <StackPanel>
+            <Grid Margin="5">
+                <TextBlock x:Name="LabelText" Margin="0,0,406.667,-54">Connection String:</TextBlock>
+                <TextBox x:Name="ConnectionInfo" Margin="183,0,0.667,-54" />
+            </Grid>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom">
+            <Button x:Name="AddButton" Height="36" Width="120" Margin="3" FontWeight="Bold" Content="Connect..."
+                    Click="AddButton_Click" />
+            <Button x:Name="CancelButton" Height="36" Width="120" Margin="3" Content="Cancel"
+                    Click="CancelButton_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

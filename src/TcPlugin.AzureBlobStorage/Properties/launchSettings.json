@@ -1,0 +1,8 @@
+{
+    "profiles": {
+        "FsAzureStorage": {
+            "commandName": "Executable",
+            "executablePath": "C:\\Projects\\lolochristen\\TcPlugin.AzureBlob\\tc\\TOTALCMD64.EXE"
+        }
+    }
+}

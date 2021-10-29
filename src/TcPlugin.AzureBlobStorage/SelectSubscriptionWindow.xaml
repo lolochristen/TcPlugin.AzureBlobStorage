@@ -1,0 +1,21 @@
+﻿<Window x:Class="TcPlugin.AzureBlobStorage.SelectSubscriptionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" WindowStyle="SingleBorderWindow" WindowState="Normal" WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Title="Connect to..." Height="113.37" Width="636.996">
+    <Grid>
+        <StackPanel>
+            <Grid Margin="5">
+                <TextBlock x:Name="LabelText">Select Subscription:</TextBlock>
+                <ComboBox x:Name="SubscriptionComboBox" DisplayMemberPath="DisplayName" Margin="206,0,-0.333,0" />
+            </Grid>
+            <Button x:Name="ConnectButton" Margin="5" Height="36" Width="120" HorizontalAlignment="Right"
+                    IsDefault="True" FontWeight="Bold">
+                Connect
+            </Button>
+        </StackPanel>
+    </Grid>
+</Window>

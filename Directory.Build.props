@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <LangVersion>latest</LangVersion>
+    <NoWarn>CS1591;CS0618</NoWarn>
+    <!--<SignAssembly>true</SignAssembly>-->
+    <!--<AssemblyOriginatorKeyFile>$(SolutionDir)Key.snk</AssemblyOriginatorKeyFile>-->
+    <NoPackageAnalysis>true</NoPackageAnalysis>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageOutputPath>$(SolutionDir)nugets</PackageOutputPath>
+    <!--<PackageProjectUrl>https://github.com/lolochristen/TcPlugin.AzureBlob</PackageProjectUrl>-->
+    <!--<PackageIconUrl>https://github.com/lolochristen/TcPlugin.AzureBlob/master/package_icon.png</PackageIconUrl>-->
+    <Description>Total Commander FileSystem for Azure BlockBlobs</Description>
+    <Copyright>Copyright © 2021 Laurent Christen</Copyright>
+    <PackageTags>.net Total-Commander-Plugin TC-FileSystem-Plugin Azure-Blob-Storage</PackageTags>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+
+</PropertyGroup>
+
+</Project>

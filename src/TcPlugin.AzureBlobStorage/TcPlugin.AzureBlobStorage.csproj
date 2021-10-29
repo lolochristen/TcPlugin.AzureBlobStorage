@@ -1,0 +1,70 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <OutputPath>..\..\bin</OutputPath>
+  </PropertyGroup>
+
+
+  <ItemGroup>
+    <PackageReference Include="Azure.Identity" Version="1.4.1" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.10.0" />
+    <PackageReference Include="Microsoft.Azure.Management.Fluent" Version="1.38.0" />
+    <PackageReference Include="Microsoft.Azure.Management.ResourceManager.Fluent" Version="1.38.0" />
+    <PackageReference Include="Microsoft.Azure.Management.Storage" Version="23.0.0" />
+    <PackageReference Include="Microsoft.Azure.Management.Storage.Fluent" Version="1.38.0" />
+    <PackageReference Include="Microsoft.IdentityModel.Clients.ActiveDirectory" Version="5.2.9" />
+    <PackageReference Include="TcBuild" Version="0.1.22" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Net" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Net.Http.WebRequest" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.IdentityModel" />
+    <Reference Include="System.Xml" />
+
+    <!-- WPF -->
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="WindowsBase" />
+
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Update="Resources\Icons.resx" Generator="ResXFileCodeGenerator" LastGenOutput="Icons.Designer.cs" />
+    <Compile Update="Resources\Icons.Designer.cs" AutoGen="True" DependentUpon="Icons.resx">
+      <DesignTime>True</DesignTime>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+
+    <Resource Include="assets\*.*" />
+
+    <!-- App.xaml -->
+    <!--<ApplicationDefinition Include="App.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:UpdateDesignTimeXaml</Generator>
+    </ApplicationDefinition>-->
+
+    <!-- XAML elements -->
+    <Page Include="**\*.xaml" Exclude="App.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+
+  </ItemGroup>
+  <ItemGroup>
+    <None Remove="SelectSubscriptionWindow.xaml" />
+    <None Remove="SelectTenantWindow.xaml" />
+  </ItemGroup>
+
+  <Target Name="DeployPlugin" AfterTargets="TcBuildTarget">
+    <Message Text="Deploy plugin" />
+    <Unzip SourceFiles="$(OutputPath)\out\TcPlugin.AzureBlobStorage.zip " DestinationFolder="..\..\tc\Plugins\wfx\FsAzureStorage" OverwriteReadOnlyFiles="true" />
+  </Target>
+
+</Project>

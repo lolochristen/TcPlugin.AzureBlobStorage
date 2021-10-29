@@ -1,0 +1,12 @@
+# All files
+[*]
+indent_style = space
+csharp_preserve_single_line_blocks=false
+
+[*.{cs,csx}]
+indent_size = 4
+insert_final_newline = true
+charset = utf-8
+
+[*.{config,csproj}]
+indent_size = 2
