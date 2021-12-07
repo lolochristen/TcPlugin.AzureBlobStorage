@@ -468,10 +468,11 @@ namespace TcPlugin.AzureBlobStorage
 
             try
             {
+                string contentType = MimeTypes.GetMimeType(srcFileName.Name);
                 using var sourceStream = srcFileName.OpenRead();
                 await blob.UploadAsync(sourceStream,
                     conditions: overwrite ? null : new BlobRequestConditions { IfNoneMatch = ETag.All },
-                    progressHandler: new Progress<long>(Progress), cancellationToken: token);
+                    progressHandler: new Progress<long>(Progress), cancellationToken: token, httpHeaders: new BlobHttpHeaders() { ContentType = contentType});
 
                 Progress(fileSize);
 
