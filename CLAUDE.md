@@ -4,46 +4,50 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Total Commander file-system plugin (`.wfx`) that exposes Azure Blob Storage as a browsable file system, written in C# on .NET Framework 4.8. It also registers a content plugin (`.wdx`-style custom columns) for blob properties. Windows only.
+A Total Commander file-system plugin (`.wfx`) that exposes Azure Blob Storage as a browsable file system, written in C# on .NET Framework 4.8. It also registers a content plugin for custom columns showing blob properties. Windows only.
 
 ## Commands
 
+Build with Visual Studio's MSBuild, not `dotnet build`. `Resources/Icons.resx` embeds `.ico` files (non-string resources), and SDK MSBuild fails on those with MSB3822/MSB3823. A `dotnet build` may only appear to succeed when the generated `.resources` file is already up to date.
+
 ```bash
-dotnet build TcPlugin.AzureBlobStorage.slnx
-dotnet test TcPlugin.AzureBlobStorage.slnx
-dotnet test test/TcPlugin.AzureBlobStorage.Test --filter "FullyQualifiedName~CloudPathTest.BlobName"
+"C:/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe" TcPlugin.AzureBlobStorage.slnx -restore -v:m
+dotnet test test/TcPlugin.AzureBlobStorage.Test --no-build
+dotnet test test/TcPlugin.AzureBlobStorage.Test --no-build --filter "FullyQualifiedName~BlobStoragePathTest.PathKinds"
 ```
 
-- `Directory.Build.props` sets `TreatWarningsAsErrors=true` (CS1591 and CS0618 suppressed), so any new warning breaks the build.
-- The plugin project outputs to the repo-level `bin/` (not the project's own `bin`).
-- The `TcBuild` NuGet package wraps the managed assembly into native Total Commander plugin binaries and produces `bin/out/TcPlugin.AzureBlobStorage.zip` (a TC plugin installer archive). The custom `DeployPlugin` target then unzips it into `tc/Plugins/wfx/TcPlugin.AzureBlobStorage`.
-- `tc/` holds a portable Total Commander install used for debugging; the `FsAzureStorage` launch profile starts `tc/TOTALCMD64.EXE`. Close Total Commander before rebuilding, or the deploy step fails because the plugin files are locked.
+- `Directory.Build.props` sets `TreatWarningsAsErrors=true` (CS1591 and CS0618 suppressed). MSTest analyzer findings in the test project also fail the build.
+- The plugin project outputs to the repo-level `bin/net480`. The `TcBuild` package merges the assemblies into the native `.wfx`/`.wfx64` wrappers and builds a TC installer zip. The custom `DeployPlugin` target unzips it into `tc/Plugins/wfx/TcPlugin.AzureBlobStorage`.
+- `tc/` is a portable Total Commander install for debugging; the `FsAzureStorage` launch profile starts `tc/TOTALCMD64.EXE`. Restart TC to pick up a rebuilt plugin.
 
 ## Architecture
 
-The plugin is built on `TcPluginBase` (brought in by `TcBuild`). TC calls the plugin classes, and they delegate to one shared `BlobFileSystem`:
+The plugin is built on `TcPluginBase` (brought in by `TcBuild`). TC callbacks are synchronous or return a `Task`; sync callbacks block on async operations with `.Result`.
 
-- `AzureBlobFsPlugin` (`FsPlugin`) is the entry point. It maps TC operations (list, get/put, mkdir, rmdir, rename/move, delete, properties, icons) onto `BlobFileSystem`. Several sync TC callbacks block on async methods with `.Result`.
-- `AzureBlobContentPlugin` (`ContentPlugin`) builds its custom column fields by reflecting over `Azure.Storage.Blobs.Models.BlobItemProperties`. Values come from `BlobFileSystem._blobItemPropertiesCache`, which is filled as a side effect of listing a directory. It makes no network calls of its own.
-- `BlobFileSystem` does all the Azure work: listing, transfers, copy/move (server-side copy, then delete), connection persistence, auth and client caching.
+- `AzureBlobFsPlugin` (`FsPlugin`) is the entry point. It stays a thin mapping from TC callbacks (list, get/put, mkdir/rmdir, rename/move, delete, properties, icons) to `BlobFileSystem`.
+- `AzureBlobContentPlugin` (`ContentPlugin`) builds its columns by reflecting over `BlobItemProperties` (see `BlobContentField`). Values come from a properties cache that `BlobFileSystem` fills while listing a directory, so the column plugin never calls Azure.
+- `BlobFileSystem` holds the file operations and wires together the components below.
+  - `Paths/BlobStoragePath`: parses paths and identifies which kind of path it is (see below).
+  - `Paths/PathCache`: in-memory folders that don't exist in storage yet.
+  - `Connections/ConnectionStore`: saved connections, plus `GetConnectionType` to classify a connection string or URL.
+  - `Authentication/AzureCredentialProvider`: a single `TokenCredential` shared by every client. After a 401 it can switch to an interactive browser login once, without recreating the clients.
+  - `Management/AzureResourceManagerClient`: raw ARM REST calls for tenants, subscriptions and storage accounts, with cached name→id lookups.
+  - `Storage/BlobClientFactory`: builds service, container and blob clients for a path. Container clients are cached by `ContainerPath`, and the cache is cleared when connections change. `TryGet*` methods return null when no client can be created.
+  - `Storage/PercentProgress`: turns transferred bytes into TC progress percentages, reported synchronously and only when the value changes.
 
 ### Path model (`BlobStoragePath`)
 
-Paths are split into segments, and there are two namespaces at the root:
+The root lists two namespaces side by side:
 
-1. **Azure AD discovery**: `/<tenant>/<subscription>/<storageAccount>/<container>/<blob/path...>`. Tenants, subscriptions and storage accounts are listed through raw ARM REST calls to `management.azure.com`, using a token from `DefaultAzureCredential` (interactive browser login allowed). Names are resolved to IDs through `_tenantsDictionary` and `_subscriptionsDictionary`. Blob endpoints are built as `https://<account>.blob.core.windows.net`.
-2. **Saved connections**: `/#<name>/<container>/<blob/path...>`. A segment that starts with `#` marks a configured connection (`IsConfigurationBased`), which shifts the meaning of `Level`, `AccountName`, `ContainerName` and `BlobPath`.
+1. **Azure AD discovery**: `/<tenant>/<subscription>/<storageAccount>/<container>/<blob/path...>`. Endpoints are `https://<account>.blob.core.windows.net`.
+2. **Saved connections**: `/#<name>/<container>/<blob/path...>`. The `#` prefix sets `IsConnectionPath`.
 
-Always use `BlobStoragePath` properties instead of indexing segments by hand, because the offsets differ between the two modes. Icons in `ExtractCustomIcon` and the dispatch in `ListDirectory` both switch on mode + `Level`.
+Use the path properties (`ContainerLevel`, `IsConnectionRoot`, `IsContainerPath`, `IsBlobPath`, `AccountName`, `ContainerName`, `BlobPath`, `ContainerPath`) instead of checking levels by hand. The container sits at level 2 in one layout and level 4 in the other. For saved connections, `AccountName` holds the connection name.
 
-Blob storage has no real folders. Directories are virtual prefixes listed with `GetBlobsByHierarchy` and `/` as the delimiter. Folders created with `MkDir` exist only in `PathCache` (in memory) until a blob is uploaded under them, and `PathCache.WithCached` merges them into listings.
+Blob storage has no real folders. Directories are virtual prefixes listed with `GetBlobsByHierarchy` and `/` as the delimiter. `MkDir` below a container only adds the folder to `PathCache` until a blob is uploaded into it, and `PathCache.WithCached` merges cached folders into listings.
 
 ### Saved connections
 
-- Creating a directory at level 1 (the root) asks for a connection string or URL and saves it under that name. Removing a level-1 directory deletes the saved connection.
-- `GetConnectionType` classifies each entry as a service or container URL (with or without a SAS token `sig=`), or as a connection string (with or without a SAS token). URLs without a SAS token use the AAD token credential.
-- Connections are saved as JSON encrypted with DPAPI (`ProtectedData`, CurrentUser scope) to `%APPDATA%\FsAzureStorage\connections.bin`.
-
-### Legacy / in-progress
-
-The working tree is mid-refactor: `CloudPath` became `BlobStoragePath`, and the WPF connection dialogs and `StorageConnection` were removed. WPF references and large commented-out blocks are still in the csproj and `BlobFileSystem.cs`. Don't bring back the WPF UI; prompts now use TC's `Prompt.AskUrl` and WinForms `MessageBox`. The test project (MSTest) only covers path parsing (`CloudPathTest.cs`).
+- Creating a directory at level 1 asks for a connection string or URL (`Prompt.AskUrl`) and saves it. Removing a connection root deletes the saved connection.
+- Connection types are service or container URL, with or without a SAS token (`sig=`), or a connection string, with or without `SharedAccessSignature`. Service URLs without a SAS token authenticate with the shared AAD credential. Container URLs expose exactly one container, and their container client is created without a credential (anonymous access unless a SAS token is present).
+- Connections are saved as JSON encrypted with DPAPI (CurrentUser scope) to `%APPDATA%\FsAzureStorage\connections.bin`.
