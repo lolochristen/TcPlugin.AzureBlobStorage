@@ -4,7 +4,7 @@ using TcPluginBase.FileSystem;
 
 namespace TcPlugin.AzureBlobStorage
 {
-    public struct CloudPath
+    public struct BlobStoragePath
     {
         public string[] Segments
         {
@@ -15,10 +15,16 @@ namespace TcPlugin.AzureBlobStorage
         // Path = '/some/segments/without/trailing/slash'
         public string Path => $"/{string.Join("/", Segments)}";
 
-        public string AccountName => GetSegment(1) ?? string.Empty;
-        public string ContainerName => GetSegment(2) ?? string.Empty;
-        public string Prefix => string.Join("/", Segments.Skip(2));
-        public string BlobName => Prefix;
+        public string Tenant => GetSegment(1) ?? string.Empty;
+        public string Subscription => GetSegment(2) ?? string.Empty;
+
+        public string AccountName => IsConfigurationBased ? Segments[0]?.Substring(1) ?? string.Empty : GetSegment(3) ?? string.Empty;
+
+        public string ContainerName => (IsConfigurationBased ? GetSegment(2) : GetSegment(4)) ?? string.Empty;
+
+        public string BlobPath => string.Join("/", Segments.Skip(IsConfigurationBased ? 2 : 4)); // Segments.Count() > 4 ? "/" + string.Join("/", Segments.Skip(4)) : string.Empty;
+
+        public string BlobName => BlobPath;
 
         /// <summary>
         ///     '\'                 level 0
@@ -29,11 +35,14 @@ namespace TcPlugin.AzureBlobStorage
 
         //public bool IsAccountPath => !string.IsNullOrEmpty(AccountName);
         //public bool IsContainerPath => !string.IsNullOrEmpty(ContainerName);
-        public bool IsBlobPath => Level > 2;
-        public CloudPath Directory => System.IO.Path.GetDirectoryName(Path);
+        public bool IsBlobPath => (IsConfigurationBased && Level > 2) || (!IsConfigurationBased && Level > 4);
+
+        public bool IsConfigurationBased => Segments[0].StartsWith("#");
+
+        public BlobStoragePath Directory => System.IO.Path.GetDirectoryName(Path);
 
         /// <param name="path"> can contain backslashes and forward slashes </param>
-        public CloudPath(string path)
+        public BlobStoragePath(string path)
         {
             if (string.IsNullOrEmpty(path))
             {
@@ -65,22 +74,22 @@ namespace TcPlugin.AzureBlobStorage
             return index < Segments.Length ? Segments[index] : null;
         }
 
-        public static implicit operator string(CloudPath path)
+        public static implicit operator string(BlobStoragePath path)
         {
             return path.ToString();
         }
 
-        public static implicit operator CloudPath(string path)
+        public static implicit operator BlobStoragePath(string path)
         {
-            return new CloudPath(path);
+            return new BlobStoragePath(path);
         }
 
-        public static implicit operator CloudPath(RemotePath path)
+        public static implicit operator BlobStoragePath(RemotePath path)
         {
-            return new CloudPath(path);
+            return new BlobStoragePath(path);
         }
 
-        public static implicit operator RemotePath(CloudPath path)
+        public static implicit operator RemotePath(BlobStoragePath path)
         {
             return new RemotePath(path);
         }

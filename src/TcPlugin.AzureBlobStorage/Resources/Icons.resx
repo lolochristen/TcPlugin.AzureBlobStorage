@@ -127,4 +127,10 @@
   <data name="storage_account" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>storage-account.ico;System.Drawing.Icon, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
+  <data name="subscription" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>subscription.ico;System.Drawing.Icon, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
+  </data>
+  <data name="tenant" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>tenant.ico;System.Drawing.Icon, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
+  </data>
 </root>

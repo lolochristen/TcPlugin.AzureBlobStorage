@@ -1,0 +1,13 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path="Directory.Build.props" />
+    <File Path="README.md" />
+  </Folder>
+  <Project Path="src/TcPlugin.AzureBlobStorage/TcPlugin.AzureBlobStorage.csproj" />
+  <Project Path="test/TcPlugin.AzureBlobStorage.Test/TcPlugin.AzureBlobStorage.Test.csproj" />
+</Solution>

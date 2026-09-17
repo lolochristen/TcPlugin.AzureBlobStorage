@@ -7,7 +7,7 @@ namespace TcPlugin.AzureBlobStorage.Test {
         [TestMethod]
         public void Converts_Backslash()
         {
-            CloudPath path = @"\Test\Folder\Path\File.txt";
+            BlobStoragePath path = @"\Test\Folder\Path\File.txt";
             var actual = (string) path;
             var expected = "/Test/Folder/Path/File.txt";
             Assert.AreEqual(expected, actual);
@@ -16,10 +16,10 @@ namespace TcPlugin.AzureBlobStorage.Test {
         [TestMethod]
         public void Removes_TrailingSlash()
         {
-            CloudPath path = "/some/folder/";
+            BlobStoragePath path = "/some/folder/";
             Assert.AreEqual("/some/folder", (string) path);
 
-            CloudPath path2 = @"\some\folder\";
+            BlobStoragePath path2 = @"\some\folder\";
             Assert.AreEqual("/some/folder", (string) path2);
         }
 
@@ -27,7 +27,7 @@ namespace TcPlugin.AzureBlobStorage.Test {
         [TestMethod]
         public void BlobName()
         {
-            CloudPath path = "/MyAccount/MyContainer/Folder1/Folder2/File.txt";
+            BlobStoragePath path = "/MyAccount/MyContainer/Folder1/Folder2/File.txt";
             var actual = path.BlobName;
             var expected = "Folder1/Folder2/File.txt";
             Assert.AreEqual(expected, actual);
@@ -37,8 +37,8 @@ namespace TcPlugin.AzureBlobStorage.Test {
         public void Prefix()
         {
             // does the same as BlobName
-            CloudPath path = "/MyAccount/MyContainer/Folder1/Folder2/File.txt";
-            var actual = path.Prefix;
+            BlobStoragePath path = "/MyAccount/MyContainer/Folder1/Folder2/File.txt";
+            var actual = path.BlobPath;
             var expected = "Folder1/Folder2/File.txt";
             Assert.AreEqual(expected, actual);
         }
@@ -46,8 +46,8 @@ namespace TcPlugin.AzureBlobStorage.Test {
         [TestMethod]
         public void IsBlobPath()
         {
-            CloudPath trueBlobPath = "/MyAccount/MyContainer/Folder1/Folder2/File.txt";
-            CloudPath falseBlobPath = "/MyAccount/MyContainer/";
+            BlobStoragePath trueBlobPath = "/MyAccount/MyContainer/Folder1/Folder2/File.txt";
+            BlobStoragePath falseBlobPath = "/MyAccount/MyContainer/";
             Assert.IsTrue(trueBlobPath.IsBlobPath);
             Assert.IsFalse(falseBlobPath.IsBlobPath);
         }
@@ -55,7 +55,7 @@ namespace TcPlugin.AzureBlobStorage.Test {
         [TestMethod]
         public void ContainerName()
         {
-            CloudPath path = "/MyAccount/MyContainer/Folder1/Folder2/File.txt";
+            BlobStoragePath path = "/MyAccount/MyContainer/Folder1/Folder2/File.txt";
             var actual = path.ContainerName;
             var expected = "MyContainer";
             Assert.AreEqual(expected, actual);
@@ -64,7 +64,7 @@ namespace TcPlugin.AzureBlobStorage.Test {
         [TestMethod]
         public void AccountName()
         {
-            CloudPath path = "/MyAccount/MyContainer/Folder1/Folder2/File.txt";
+            BlobStoragePath path = "/MyAccount/MyContainer/Folder1/Folder2/File.txt";
             var actual = path.AccountName;
             var expected = "MyAccount";
             Assert.AreEqual(expected, actual);
@@ -73,7 +73,7 @@ namespace TcPlugin.AzureBlobStorage.Test {
         [TestMethod]
         public void Directory()
         {
-            CloudPath path = "/MyAccount/MyContainer/Folder1/Folder2/File.txt";
+            BlobStoragePath path = "/MyAccount/MyContainer/Folder1/Folder2/File.txt";
 
             path = path.Directory;
             Assert.AreEqual("/MyAccount/MyContainer/Folder1/Folder2", (string) path);
@@ -95,9 +95,9 @@ namespace TcPlugin.AzureBlobStorage.Test {
         [TestMethod]
         public void Level()
         {
-            var level0 = (CloudPath) @"\";
-            var level1 = (CloudPath) @"\segment";
-            var level2 = (CloudPath) @"\segment\segment";
+            var level0 = (BlobStoragePath) @"\";
+            var level1 = (BlobStoragePath) @"\segment";
+            var level2 = (BlobStoragePath) @"\segment\segment";
 
             foreach (var p in level0.Segments) {
                 Console.WriteLine("0:" + p);
@@ -120,7 +120,7 @@ namespace TcPlugin.AzureBlobStorage.Test {
         [TestMethod]
         public void GetSegment()
         {
-            CloudPath path = "/segment1/segment2/segment3/segment4";
+            BlobStoragePath path = "/segment1/segment2/segment3/segment4";
 
             Assert.AreEqual(null, path.GetSegment(0));
             Assert.AreEqual("segment1", path.GetSegment(1));

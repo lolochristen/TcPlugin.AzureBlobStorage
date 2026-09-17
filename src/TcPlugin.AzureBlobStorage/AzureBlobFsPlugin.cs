@@ -12,22 +12,22 @@ namespace TcPlugin.AzureBlobStorage
 {
     public class AzureBlobFsPlugin : FsPlugin
     {
-        private readonly BlobFileSystem _fs;
+        private readonly BlobFileSystem _blobFileSystem;
         private readonly Settings _pluginSettings;
 
         public AzureBlobFsPlugin(Settings pluginSettings) : base(pluginSettings)
         {
             _pluginSettings = pluginSettings;
             Title = "Azure Blob Plugin";
-            _fs = new BlobFileSystem();
+            _blobFileSystem = new BlobFileSystem();
 
-            ContentPlugin = new AzureBlobContentPlugin(pluginSettings, _fs);
+            ContentPlugin = new AzureBlobContentPlugin(pluginSettings, _blobFileSystem);
 
             BackgroundFlags = FsBackgroundFlags.Download | FsBackgroundFlags.Upload;
 
             try
             {
-                _fs.LoadConnections();
+                _blobFileSystem.LoadConnections();
             }
             catch (Exception exp)
             {
@@ -42,47 +42,46 @@ namespace TcPlugin.AzureBlobStorage
 
         public override bool DeleteFile(RemotePath fileName)
         {
-            return _fs.DeleteFile(fileName).Result;
+            return _blobFileSystem.DeleteFile(fileName).Result;
         }
 
         public override ExecResult ExecuteOpen(TcWindow mainWin, RemotePath remoteName)
         {
-            CloudPath path = remoteName;
-
-            if (path.Level == 2 && path.AccountName == BlobFileSystem.CONNECT_AZURE_TITLE)
-            {
-                _fs.ExecuteAzureSettings(path);
-                return ExecResult.Ok;
-            }
-
+            return ExecResult.Yourself;
             return ExecResult.Yourself;
         }
 
         public override ExecResult ExecuteProperties(TcWindow mainWin, RemotePath remoteName)
         {
-            if (_fs.ShowProperties(remoteName))
+            if (_blobFileSystem.ShowProperties(remoteName))
                 return ExecResult.Ok;
             return ExecResult.Yourself;
         }
 
         public override ExtractIconResult ExtractCustomIcon(RemotePath remoteName, ExtractIconFlags extractFlags)
         {
-            var path = new CloudPath(remoteName);
+            var path = new BlobStoragePath(remoteName);
 
             if (path.Path.EndsWith("..")) return ExtractIconResult.UseDefault;
 
-            if (path.Level == 1)
-                switch (path)
-                {
-                    case "/" + BlobFileSystem.CONNECT_AZURE_TITLE:
-                        return ExtractIconResult.Extracted(Icons.settings_icon);
-
-                    default:
-                        // accounts
-                        return ExtractIconResult.Extracted(Icons.storage_account);
-                }
-
-            if (path.Level == 2) return ExtractIconResult.Extracted(Icons.container_icon);
+            if (path.IsConfigurationBased)
+            {
+                if (path.Level == 1)
+                    return ExtractIconResult.Extracted(Icons.settings_icon);
+                if (path.Level == 2)
+                    return ExtractIconResult.Extracted(Icons.container_icon);
+            }
+            else
+            {
+                if (path.Level == 1)
+                    return ExtractIconResult.Extracted(Icons.tenant);
+                if (path.Level == 2)
+                    return ExtractIconResult.Extracted(Icons.subscription);
+                if (path.Level == 3)
+                    return ExtractIconResult.Extracted(Icons.storage_account);
+                if (path.Level == 4)
+                    return ExtractIconResult.Extracted(Icons.container_icon);
+            }
 
             return ExtractIconResult.UseDefault;
         }
@@ -102,7 +101,7 @@ namespace TcPlugin.AzureBlobStorage
             if (File.Exists(localName) && !overWrite) return FileSystemExitCode.FileExists;
 
             var prevPercent = -1;
-            return await _fs.DownloadFile(
+            return await _blobFileSystem.DownloadFile(
                 remoteName,
                 new FileInfo(localName),
                 overWrite,
@@ -122,24 +121,23 @@ namespace TcPlugin.AzureBlobStorage
 
         public override IEnumerable<FindData> GetFiles(RemotePath path)
         {
-            if (path.Level == 1 && path.Segments[0] == BlobFileSystem.CONNECT_AZURE_TITLE)
-                return _fs.GetAzureConnectOptions();
-
-            var items = _fs.ListDirectory(path);
-
-            if (path.Level == 0)
-                return items.Append(new FindData(BlobFileSystem.CONNECT_AZURE_TITLE, FileAttributes.Directory));
-
+            var items = _blobFileSystem.ListDirectory(path);
             return items;
         }
 
         public override bool MkDir(RemotePath dir)
         {
             if (dir.Level == 1)
-                return _fs.AddStorageConnectionByUrlString("Blob Connection String:", dir);
-            return _fs.CacheDirectory(dir);
+            {
+                var connectionString = Prompt.AskUrl("Blob Connection String or URL:");
+                if (string.IsNullOrEmpty(connectionString))
+                    return false;
+                _blobFileSystem.AddConfiguration(dir.FileName, connectionString);
+                return true;
+                //return _blobFileSystem.AddStorageConnectionByUrlString("Blob Connection String:", dir);
+            }
+            return _blobFileSystem.CreateDirectory(dir);
         }
-
 
         public override async Task<FileSystemExitCode> PutFileAsync(string localName, RemotePath remoteName,
             CopyFlags copyFlags, Action<int> setProgress, CancellationToken token)
@@ -153,7 +151,7 @@ namespace TcPlugin.AzureBlobStorage
             if (!File.Exists(localName)) return FileSystemExitCode.FileNotFound;
 
             var prevPercent = -1;
-            var ret = await _fs.UploadFile(new FileInfo(localName), remoteName, overWrite,
+            var ret = await _blobFileSystem.UploadFile(new FileInfo(localName), remoteName, overWrite,
                 (source, destination, percent) =>
                 {
                     if (percent != prevPercent)
@@ -173,9 +171,8 @@ namespace TcPlugin.AzureBlobStorage
 
         public override bool RemoveDir(RemotePath dirName)
         {
-            return _fs.RemoveDirectory(dirName);
+            return _blobFileSystem.RemoveDirectory(dirName);
         }
-
 
         public override FileSystemExitCode RenMovFile(RemotePath oldName, RemotePath newName, bool move, bool overwrite,
             RemoteInfo remoteInfo)
@@ -184,9 +181,9 @@ namespace TcPlugin.AzureBlobStorage
             try
             {
                 if (move)
-                    return _fs.Move(oldName, newName, overwrite, default).Result;
+                    return _blobFileSystem.Move(oldName, newName, overwrite, default).Result;
                 else
-                    return _fs.Copy(oldName, newName, overwrite, default).Result;
+                    return _blobFileSystem.Copy(oldName, newName, overwrite, default).Result;
             }
             finally
             {

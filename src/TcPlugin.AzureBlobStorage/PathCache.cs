@@ -10,21 +10,21 @@ namespace TcPlugin.AzureBlobStorage
     {
         public PathCache()
         {
-            Paths = new List<CloudPath>();
+            Paths = new List<BlobStoragePath>();
         }
 
-        public List<CloudPath> Paths
+        public List<BlobStoragePath> Paths
         {
             get;
         }
 
-        public void Add(CloudPath path)
+        public void Add(BlobStoragePath path)
         {
             Remove(path);
             Paths.Add(path);
         }
 
-        public bool Remove(CloudPath fileName)
+        public bool Remove(BlobStoragePath fileName)
         {
             return Paths.RemoveAll(path =>
                     path.Path == fileName.Path ||
@@ -32,7 +32,7 @@ namespace TcPlugin.AzureBlobStorage
             ) > 0;
         }
 
-        public IEnumerable<FindData> WithCached(CloudPath parent, IEnumerable<FindData> list)
+        public IEnumerable<FindData> WithCached(BlobStoragePath parent, IEnumerable<FindData> list)
         {
             // get a distinct list of all cached folders in "parent" directory
             var folders = Paths

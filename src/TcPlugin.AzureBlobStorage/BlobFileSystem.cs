@@ -1,6 +1,12 @@
+using Azure;
+using Azure.Core;
+using Azure.Identity;
+using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
+using Azure.Storage.Blobs.Specialized;
+using Microsoft.Rest;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -10,22 +16,12 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Interop;
-using Azure;
-using Azure.Core;
-using Azure.Identity;
-using Azure.Storage.Blobs;
-using Azure.Storage.Blobs.Models;
-using Azure.Storage.Blobs.Specialized;
-using Microsoft.Azure.Management.ResourceManager.Fluent;
-using Microsoft.Azure.Management.ResourceManager.Fluent.Authentication;
-using Microsoft.Rest;
-using TcPluginBase.FileSystem;
+using System.Windows.Forms;
 
+using TcPluginBase.FileSystem;
+using TokenCredential = Azure.Core.TokenCredential;
 
 // ReSharper disable LocalizableElement
-
 namespace TcPlugin.AzureBlobStorage
 {
     public delegate void FileProgress(string source, string destination, int percentDone);
@@ -34,21 +30,26 @@ namespace TcPlugin.AzureBlobStorage
     {
         private const int DEFAULT_BUFFER_SIZE = 32768;
 
-        public const string CONNECT_AZURE_TITLE = "Connect to Azure";
+        //public const string CONNECT_AZURE_TITLE = "Connect to Azure";
 
-        private const string CONNECT_STORAGE_CONNECTION_STRING = "[Connect to Storage by Connection String]";
-        private const string CONNECT_STORAGE_SASURL = "[Connect to Storage by SAS Url]";
-        private const string CONNECT_SUBSCRIPTION = "[Connect to Subscription]";
-        private const string CONNECT_BLOB_AD = "[Connect to Blob by Azure AD]";
-        private const string CONNECT_BLOB_SASURL = "[Connect to Blob by SAS Url]";
+        //private const string CONNECT_STORAGE_CONNECTION_STRING = "[Connect to Storage by Connection String]";
+        //private const string CONNECT_STORAGE_SASURL = "[Connect to Storage by SAS Url]";
+        //private const string CONNECT_SUBSCRIPTION = "[Connect to Subscription]";
+        //private const string CONNECT_BLOB_AD = "[Connect to Blob by Azure AD]";
+        //private const string CONNECT_BLOB_SASURL = "[Connect to Blob by SAS Url]";
         private readonly Dictionary<string, BlobItemProperties> _blobItemPropertiesCache;
         internal readonly PathCache _pathCache;
 
-        private Dictionary<string, StorageConnection> _connections;
+        //private Dictionary<string, StorageConnection> _connections;
+
+        private Dictionary<string, string> _connections;
+
+        private Dictionary<string, Guid> _tenantsDictionary;
 
         public BlobFileSystem()
         {
-            _connections = new Dictionary<string, StorageConnection>();
+            //_connections = new Dictionary<string, StorageConnection>();
+            _connections = new Dictionary<string, string>();
             _pathCache = new PathCache();
             _blobItemPropertiesCache = new Dictionary<string, BlobItemProperties>();
 
@@ -58,134 +59,134 @@ namespace TcPlugin.AzureBlobStorage
         private string ConnectionSettingsPath => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FsAzureStorage\\connections.bin");
 
-        public bool AddNewStorageConnection(string containerString)
-        {
-            var storageConnection = StorageConnection.Parse(containerString);
+        //public bool AddNewStorageConnection(string containerString)
+        //{
+        //    var storageConnection = StorageConnection.Parse(containerString);
 
-            if (storageConnection == null)
-                return false;
+        //    if (storageConnection == null)
+        //        return false;
 
-            if (storageConnection.RequiresAad)
-            {
-                // logon and select tenant
-                var tenants = GetTenants(out var credentials, out var authenticatedTenantId);
-                var tenantWindow = new SelectTenantWindow();
-                SetOwnerWindow(tenantWindow);
-                tenantWindow.SetTenants(tenants);
-                if (tenantWindow.ShowDialog() == true)
-                {
-                    storageConnection.TenantId = tenantWindow.SelectedTenant.Key;
-                    if (authenticatedTenantId == storageConnection.TenantId) // reuse if they match
-                        storageConnection.Credential = credentials;
-                    storageConnection.UseActiveDirectory = true;
-                }
-                else
-                {
-                    return false;
-                }
-            }
+        //    if (storageConnection.RequiresAad)
+        //    {
+        //        // logon and select tenant
+        //        var tenants = GetTenants(out var credentials, out var authenticatedTenantId);
+        //        var tenantWindow = new SelectTenantWindow();
+        //        SetOwnerWindow(tenantWindow);
+        //        tenantWindow.SetTenants(tenants);
+        //        if (tenantWindow.ShowDialog() == true)
+        //        {
+        //            storageConnection.TenantId = tenantWindow.SelectedTenant.Key;
+        //            if (authenticatedTenantId == storageConnection.TenantId) // reuse if they match
+        //                storageConnection.Credential = credentials;
+        //            storageConnection.UseActiveDirectory = true;
+        //        }
+        //        else
+        //        {
+        //            return false;
+        //        }
+        //    }
 
-            AddReplaceStorageConnection(storageConnection);
-            return true;
-        }
+        //    AddReplaceStorageConnection(storageConnection);
+        //    return true;
+        //}
 
-        public void AddNewStorageConnection(string accountName, string accountKey,
-            TokenCredential tokenCredential = null, string tenantId = null)
-        {
-            var storageConnection = StorageConnection.FromAccountKey(accountName, accountKey);
+        //public void AddNewStorageConnection(string accountName, string accountKey,
+        //    TokenCredential tokenCredential = null, string tenantId = null)
+        //{
+        //    var storageConnection = StorageConnection.FromAccountKey(accountName, accountKey);
 
-            if (tokenCredential != null)
-            {
-                storageConnection.TenantId = tenantId;
-                storageConnection.Credential = tokenCredential;
-            }
+        //    if (tokenCredential != null)
+        //    {
+        //        storageConnection.TenantId = tenantId;
+        //        storageConnection.Credential = tokenCredential;
+        //    }
 
-            AddReplaceStorageConnection(storageConnection);
-        }
+        //    AddReplaceStorageConnection(storageConnection);
+        //}
 
-        public bool AddStorageConnectionByUrlString(string label = null, string connectionString = null)
-        {
-            // TODO Label
-            var connect = new EnterConnectionInfoWindow();
-            SetOwnerWindow(connect);
-            if (label != null)
-                connect.Label = label;
-            if (connectionString != null)
-                connect.ConnectionInfoText = connectionString;
-            var result = connect.ShowDialog();
-            if (result != null && result.Value)
-            {
-                AddNewStorageConnection(connect.ConnectionInfoText);
-                SaveConnections();
-                return true;
-            }
+        //public bool AddStorageConnectionByUrlString(string label = null, string connectionString = null)
+        //{
+        //    // TODO Label
+        //    var connect = new EnterConnectionInfoWindow();
+        //    SetOwnerWindow(connect);
+        //    if (label != null)
+        //        connect.Label = label;
+        //    if (connectionString != null)
+        //        connect.ConnectionInfoText = connectionString;
+        //    var result = connect.ShowDialog();
+        //    if (result != null && result.Value)
+        //    {
+        //        AddNewStorageConnection(connect.ConnectionInfoText);
+        //        SaveConnections();
+        //        return true;
+        //    }
 
-            return false;
-        }
+        //    return false;
+        //}
 
-        public bool AddStorageConnectionsBySubscription()
-        {
-            try
-            {
-                var tenants = GetTenants(out var credentials, out var authenticatedTenantId);
-                if (tenants == null)
-                    return false;
+        //public bool AddStorageConnectionsBySubscription()
+        //{
+        //    try
+        //    {
+        //        var tenants = GetTenants(out var credentials, out var authenticatedTenantId);
+        //        if (tenants == null)
+        //            return false;
 
-                string tenantId = null;
-                if (tenants.Count == 0)
-                    return false;
+        //        string tenantId = null;
+        //        if (tenants.Count == 0)
+        //            return false;
 
-                if (tenants.Count == 1)
-                {
-                    tenantId = tenants.First().Value;
-                }
-                else
-                {
-                    var tenantWindow = new SelectTenantWindow();
-                    SetOwnerWindow(tenantWindow);
-                    tenantWindow.SetTenants(tenants);
-                    if (tenantWindow.ShowDialog() == true)
-                    {
-                        tenantId = tenantWindow.SelectedTenant.Key;
-                        if (tenantId != authenticatedTenantId)
-                            credentials = null; // new authentication
-                    }
-                }
+        //        if (tenants.Count == 1)
+        //        {
+        //            tenantId = tenants.First().Value;
+        //        }
+        //        else
+        //        {
+        //            var tenantWindow = new SelectTenantWindow();
+        //            SetOwnerWindow(tenantWindow);
+        //            tenantWindow.SetTenants(tenants);
+        //            if (tenantWindow.ShowDialog() == true)
+        //            {
+        //                tenantId = tenantWindow.SelectedTenant.Key;
+        //                if (tenantId != authenticatedTenantId)
+        //                    credentials = null; // new authentication
+        //            }
+        //        }
 
-                var subscriptions = GetSubscriptions(tenantId, ref credentials);
-                if (subscriptions == null)
-                    return false;
+        //        var subscriptions = GetSubscriptions(tenantId, ref credentials);
+        //        if (subscriptions == null)
+        //            return false;
 
-                string subscriptionId = null;
+        //        string subscriptionId = null;
 
-                if (subscriptions.Count() == 1)
-                {
-                    subscriptionId = subscriptions.First().SubscriptionId;
-                }
-                else
-                {
-                    var subWindow = new SelectSubscriptionWindow();
-                    SetOwnerWindow(subWindow);
-                    subWindow.SetSubscriptions(subscriptions);
-                    if (subWindow.ShowDialog() == true)
-                        subscriptionId = subWindow.SelectedSubscription.SubscriptionId;
-                }
+        //        if (subscriptions.Count() == 1)
+        //        {
+        //            subscriptionId = subscriptions.First().SubscriptionId;
+        //        }
+        //        else
+        //        {
+        //            var subWindow = new SelectSubscriptionWindow();
+        //            SetOwnerWindow(subWindow);
+        //            subWindow.SetSubscriptions(subscriptions);
+        //            if (subWindow.ShowDialog() == true)
+        //                subscriptionId = subWindow.SelectedSubscription.SubscriptionId;
+        //        }
 
-                if (subscriptionId != null)
-                {
-                    AddStorageAccountsFromSubscription(subscriptionId, credentials, tenantId);
-                    return true;
-                }
-            }
-            catch
-            {
-                // ?
-            }
+        //        if (subscriptionId != null)
+        //        {
+        //            AddStorageAccountsFromSubscription(subscriptionId, credentials, tenantId);
+        //            return true;
+        //        }
+        //    }
+        //    catch
+        //    {
+        //        // ?
+        //    }
 
-            return false;
-        }
+        //    return false;
+        //}
 
-        public bool CacheDirectory(CloudPath dir)
+        public bool CreateDirectory(BlobStoragePath dir)
         {
             if (dir.IsBlobPath)
             {
@@ -193,12 +194,19 @@ namespace TcPlugin.AzureBlobStorage
                 return true;
             }
 
-            // can not create accounts and container
+            if ((dir.IsConfigurationBased && dir.Level == 2) ||
+                (dir.IsConfigurationBased == false && dir.Level == 4))
+            {
+                // Create container
+                var client = GetBlobServiceClient(dir);
+                client.CreateBlobContainer(dir.ContainerName);
+                return true;
+            }
+
             return false;
         }
 
-
-        public async Task<FileSystemExitCode> Copy(CloudPath sourceFileName, CloudPath destFileName, bool overwrite,
+        public async Task<FileSystemExitCode> Copy(BlobStoragePath sourceFileName, BlobStoragePath destFileName, bool overwrite,
             CancellationToken token)
         {
             var source = GetBlobClient(sourceFileName);
@@ -217,40 +225,35 @@ namespace TcPlugin.AzureBlobStorage
             return FileSystemExitCode.OK;
         }
 
-        public async Task<bool> DeleteFile(CloudPath fileName)
+        public async Task<bool> DeleteFile(BlobStoragePath path)
         {
-            if (fileName.AccountName == CONNECT_AZURE_TITLE)
+            if (path.Level == 1)
             {
-                if (fileName.Level == 2)
+                if (_connections.ContainsKey(path.Tenant))
                 {
-                    if (_connections.ContainsKey(fileName.ContainerName))
-                    {
-                        _connections.Remove(fileName.ContainerName);
-                        SaveConnections();
-                    }
-
+                    _connections.Remove(path.ContainerName);
+                    SaveConnections();
                     return true;
                 }
-
                 return false;
             }
 
-            var blob = GetBlobClient(fileName);
+            var blob = GetBlobClient(path);
             if (blob is null) return false;
 
-            var success = RemoveDirectory(fileName);
+            var success = RemoveDirectory(path);
 
             if (await blob.DeleteIfExistsAsync())
             {
                 // cache the directory to allow adding some files
-                _pathCache.Add(fileName.Directory);
+                _pathCache.Add(path.Directory);
                 return true;
             }
 
             return success;
         }
 
-        public async Task<FileSystemExitCode> DownloadFile(CloudPath srcFileName, FileInfo dstFileName, bool overwrite,
+        public async Task<FileSystemExitCode> DownloadFile(BlobStoragePath srcFileName, FileInfo dstFileName, bool overwrite,
             FileProgress fileProgress, bool deleteAfter = false, CancellationToken token = default)
         {
             var blob = GetBlobClient(srcFileName);
@@ -291,50 +294,50 @@ namespace TcPlugin.AzureBlobStorage
             }
         }
 
-        public void ExecuteAzureSettings(CloudPath path)
-        {
-            switch (path.ContainerName)
-            {
-                case CONNECT_STORAGE_SASURL:
-                    AddStorageConnectionByUrlString("SAS Storage Url:",
-                        "https://[StorageAccount].blob.core.windows.net/?[SASKey]");
-                    break;
-                case CONNECT_STORAGE_CONNECTION_STRING:
-                    AddStorageConnectionByUrlString("Storage Connection String:",
-                        "DefaultEndpointsProtocol=https;AccountName=[StorageAccount];AccountKey=[Key];EndpointSuffix=core.windows.net");
-                    break;
-                case CONNECT_BLOB_AD:
-                    AddStorageConnectionByUrlString("Storage Connection String:",
-                        "https://[StorageAccount].blob.core.windows.net/[Container]?");
-                    break;
-                case CONNECT_BLOB_SASURL:
-                    AddStorageConnectionByUrlString("SAS Blob Url:",
-                        "https://[StorageAccount].blob.core.windows.net/[Container]?[SASKey]");
-                    break;
+        //public void ExecuteAzureSettings(BlobStoragePath path)
+        //{
+        //    switch (path.ContainerName)
+        //    {
+        //        case CONNECT_STORAGE_SASURL:
+        //            AddStorageConnectionByUrlString("SAS Storage Url:",
+        //                "https://[StorageAccount].blob.core.windows.net/?[SASKey]");
+        //            break;
+        //        case CONNECT_STORAGE_CONNECTION_STRING:
+        //            AddStorageConnectionByUrlString("Storage Connection String:",
+        //                "DefaultEndpointsProtocol=https;AccountName=[StorageAccount];AccountKey=[Key];EndpointSuffix=core.windows.net");
+        //            break;
+        //        case CONNECT_BLOB_AD:
+        //            AddStorageConnectionByUrlString("Storage Connection String:",
+        //                "https://[StorageAccount].blob.core.windows.net/[Container]?");
+        //            break;
+        //        case CONNECT_BLOB_SASURL:
+        //            AddStorageConnectionByUrlString("SAS Blob Url:",
+        //                "https://[StorageAccount].blob.core.windows.net/[Container]?[SASKey]");
+        //            break;
 
-                case CONNECT_SUBSCRIPTION:
-                    AddStorageConnectionsBySubscription();
+        //        case CONNECT_SUBSCRIPTION:
+        //            AddStorageConnectionsBySubscription();
 
-                    // select 
-                    break;
-            }
-        }
+        //            // select 
+        //            break;
+        //    }
+        //}
 
-        public IEnumerable<FindData> GetAzureConnectOptions()
-        {
-            var items = new List<FindData>
-            {
-                new(CONNECT_STORAGE_CONNECTION_STRING, FileAttributes.Normal),
-                new(CONNECT_STORAGE_SASURL, FileAttributes.Normal),
-                new(CONNECT_BLOB_SASURL, FileAttributes.Normal),
-                new(CONNECT_BLOB_AD, FileAttributes.Normal),
-                new(CONNECT_SUBSCRIPTION, FileAttributes.Normal)
-            };
+        //public IEnumerable<FindData> GetAzureConnectOptions()
+        //{
+        //    var items = new List<FindData>
+        //    {
+        //        new(CONNECT_STORAGE_CONNECTION_STRING, FileAttributes.Normal),
+        //        new(CONNECT_STORAGE_SASURL, FileAttributes.Normal),
+        //        new(CONNECT_BLOB_SASURL, FileAttributes.Normal),
+        //        new(CONNECT_BLOB_AD, FileAttributes.Normal),
+        //        new(CONNECT_SUBSCRIPTION, FileAttributes.Normal)
+        //    };
 
-            items.AddRange(_connections.Select(p => new FindData(p.Key, FileAttributes.Normal)));
+        //    items.AddRange(_connections.Select(p => new FindData(p.Key, FileAttributes.Normal)));
 
-            return items;
-        }
+        //    return items;
+        //}
 
         public BlobItemProperties GetBlobItemProperties(string path)
         {
@@ -344,16 +347,36 @@ namespace TcPlugin.AzureBlobStorage
             return null;
         }
 
-        public IEnumerable<FindData> ListDirectory(CloudPath path)
+        public IEnumerable<FindData> ListDirectory(BlobStoragePath path)
         {
-            switch (path.Level)
+            if (path.Level == 0)
             {
-                case 0:
-                    return GetAccounts();
-                case 1:
-                    return GetContainers(path.AccountName);
-                default:
-                    return GetBlobs(path);
+                var items = GetTenantsList();
+                return items.Concat(GetConfigItems());
+            }
+            if (path.IsConfigurationBased)
+            {
+                switch (path.Level)
+                {
+                    case 1:
+                        return GetContainers(path);
+                    default:
+                        return GetBlobs(path);
+                }
+            }
+            else
+            {
+                switch (path.Level)
+                {
+                    case 1:
+                        return GetSubscriptions(path.Tenant);
+                    case 2:
+                        return GetStorageAccounts(path.Tenant, path.Subscription);
+                    case 3:
+                        return GetContainers(path);
+                    default:
+                        return GetBlobs(path);
+                }
             }
         }
 
@@ -364,11 +387,11 @@ namespace TcPlugin.AzureBlobStorage
             var read = fs.Read(buffer, 0, buffer.Length);
             var decrypted = ProtectedData.Unprotect(buffer, null, DataProtectionScope.CurrentUser);
             var reader = new Utf8JsonReader(decrypted);
-            _connections = JsonSerializer.Deserialize<Dictionary<string, StorageConnection>>(ref reader);
+            _connections = JsonSerializer.Deserialize<Dictionary<string, string>>(ref reader);
         }
 
 
-        public async Task<FileSystemExitCode> Move(CloudPath sourceFileName, CloudPath destFileName, bool overwrite,
+        public async Task<FileSystemExitCode> Move(BlobStoragePath sourceFileName, BlobStoragePath destFileName, bool overwrite,
             CancellationToken token)
         {
             var source = GetBlobClient(sourceFileName);
@@ -389,7 +412,7 @@ namespace TcPlugin.AzureBlobStorage
         }
 
 
-        public bool RemoveDirectory(CloudPath directory)
+        public bool RemoveDirectory(BlobStoragePath directory)
         {
             _pathCache.Remove(directory);
 
@@ -397,10 +420,9 @@ namespace TcPlugin.AzureBlobStorage
             if (directory.Level == 1)
             {
                 // remove config
-                var conn = GetStorageConnection(directory);
-                if (conn != null)
+                if (_connections.ContainsKey(directory.AccountName))
                 {
-                    _connections.Remove(conn.AccountName);
+                    _connections.Remove(directory.AccountName);
                     SaveConnections();
                     return true;
                 }
@@ -419,7 +441,7 @@ namespace TcPlugin.AzureBlobStorage
             fs.Write(encrypted, 0, encrypted.Length);
         }
 
-        public bool ShowProperties(CloudPath cloudPath)
+        public bool ShowProperties(BlobStoragePath cloudPath)
         {
             if (!cloudPath.IsBlobPath)
                 return false;
@@ -434,8 +456,8 @@ namespace TcPlugin.AzureBlobStorage
                         new JsonSerializerOptions
                             { WriteIndented = true, Converters = { new JsonStringEnumConverter() } });
 
-                MessageBox.Show(propJson, "Properties " + cloudPath.BlobName, MessageBoxButton.OK,
-                    MessageBoxImage.Information);
+                //MessageBox.Show(propJson, "Properties " + cloudPath.BlobName, MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(propJson, "Properties " + cloudPath.BlobName, MessageBoxButtons.OK);
                 return true;
             }
             catch
@@ -445,7 +467,7 @@ namespace TcPlugin.AzureBlobStorage
         }
 
 
-        public async Task<FileSystemExitCode> UploadFile(FileInfo srcFileName, CloudPath dstFileName, bool overwrite,
+        public async Task<FileSystemExitCode> UploadFile(FileInfo srcFileName, BlobStoragePath dstFileName, bool overwrite,
             FileProgress fileProgress, CancellationToken token = default)
         {
             var blob = GetBlockBlobClient(dstFileName);
@@ -484,45 +506,45 @@ namespace TcPlugin.AzureBlobStorage
             }
         }
 
-        private void AddReplaceStorageConnection(StorageConnection storageConnection)
-        {
-            if (_connections.ContainsKey(storageConnection.AccountName))
-                _connections[storageConnection.AccountName] = storageConnection;
-            else
-                _connections.Add(storageConnection.AccountName, storageConnection);
-        }
+        //private void AddReplaceStorageConnection(StorageConnection storageConnection)
+        //{
+        //    if (_connections.ContainsKey(storageConnection.AccountName))
+        //        _connections[storageConnection.AccountName] = storageConnection;
+        //    else
+        //        _connections.Add(storageConnection.AccountName, storageConnection);
+        //}
 
-        private void AddStorageAccountsFromSubscription(string subscriptionId, TokenCredential tokenCredential,
-            string tenantId)
-        {
-            var _requestContext =
-                new TokenRequestContext(new[] { "https://management.azure.com/.default" }, tenantId: tenantId);
+        //private void AddStorageAccountsFromSubscription(string subscriptionId, TokenCredential tokenCredential,
+        //    string tenantId)
+        //{
+        //    var _requestContext =
+        //        new TokenRequestContext(new[] { "https://management.azure.com/.default" }, tenantId: tenantId);
 
-            var token = tokenCredential.GetToken(_requestContext, CancellationToken.None);
-            var tokenCredentials = new TokenCredentials(token.Token);
+        //    var token = tokenCredential.GetToken(_requestContext, CancellationToken.None);
+        //    var tokenCredentials = new TokenCredentials(token.Token);
 
-            //var client = new Microsoft.Azure.Management.Storage.StorageManagementClient(tokenCredentials);
-            //var storageAccounts = client.StorageAccounts.List();
+        //    //var client = new Microsoft.Azure.Management.Storage.StorageManagementClient(tokenCredentials);
+        //    //var storageAccounts = client.StorageAccounts.List();
 
-            var azureCredentials = new AzureCredentials(tokenCredentials, tokenCredentials, tenantId,
-                AzureEnvironment.AzureGlobalCloud);
+        //    var azureCredentials = new AzureCredentials(tokenCredentials, tokenCredentials, tenantId,
+        //        AzureEnvironment.AzureGlobalCloud);
 
-            var storageAccounts = Microsoft.Azure.Management.Fluent.Azure.Authenticate(azureCredentials)
-                .WithSubscription(subscriptionId).StorageAccounts.List();
+        //    var storageAccounts = Microsoft.Azure.Management.Fluent.Azure.Authenticate(azureCredentials)
+        //        .WithSubscription(subscriptionId).StorageAccounts.List();
 
-            foreach (var storageAccount in storageAccounts)
-            {
-                //var keys = client.StorageAccounts.ListKeys("", storageAccount.Name);
-                // ? check if only aad is supported?
-                var keys = storageAccount.GetKeys();
-                //_fs.AddNewStorageConnection(storageAccount.Name, keys.First().Value, azureCredentials);
-                AddNewStorageConnection(storageAccount.Name, keys.First().Value, tokenCredential, tenantId);
-            }
+        //    foreach (var storageAccount in storageAccounts)
+        //    {
+        //        //var keys = client.StorageAccounts.ListKeys("", storageAccount.Name);
+        //        // ? check if only aad is supported?
+        //        var keys = storageAccount.GetKeys();
+        //        //_fs.AddNewStorageConnection(storageAccount.Name, keys.First().Value, azureCredentials);
+        //        AddNewStorageConnection(storageAccount.Name, keys.First().Value, tokenCredential, tenantId);
+        //    }
 
-            MessageBox.Show($"{storageAccounts.Count()} Storage Accounts added.");
+        //    MessageBox.Show($"{storageAccounts.Count()} Storage Accounts added.");
 
-            SaveConnections();
-        }
+        //    SaveConnections();
+        //}
 
         private static async Task<FileSystemExitCode> CopyAndOverwrite(BlobClient src, BlobClient dst,
             CancellationToken token)
@@ -547,53 +569,216 @@ namespace TcPlugin.AzureBlobStorage
             return FileSystemExitCode.OK;
         }
 
-        private BlobServiceClient GetAccountClient(string accountName)
+        //private BlobServiceClient GetAccountClient(string accountName)
+        //{
+        //    if (!_connections.TryGetValue(accountName, out var conn))
+        //        return null;
+
+        //    if (conn.UseActiveDirectory || conn.RequiresAad)
+        //    {
+        //        if (conn.Credential == null)
+        //        {
+        //            // logon
+        //            var tenantId = conn.TenantId;
+        //            var credential = LogonToAzure(ref tenantId);
+        //            if (credential == null)
+        //                return null; // ?
+        //            conn.Credential = credential;
+        //        }
+
+        //        if (conn.Url == null)
+        //        {
+        //            var uri = conn.GetBaseUriFromConnectionString();
+        //            return new BlobServiceClient(uri, conn.Credential);
+        //        }
+
+        //        return new BlobServiceClient(conn.Url, conn.Credential);
+        //    }
+
+        //    if (conn.IsStorageSAS)
+        //        return new BlobServiceClient(conn.Url);
+        //    if (conn.IsContainerSAS)
+        //        return null;
+
+
+        //    return new BlobServiceClient(conn.ConnectionString);
+        //}
+
+        private IEnumerable<FindData> GetConfigItems()
         {
-            if (!_connections.TryGetValue(accountName, out var conn))
-                return null;
+            return _connections.Keys.Select(p => new FindData($"#{p}", FileAttributes.Directory) );
+        }
 
-            if (conn.UseActiveDirectory || conn.RequiresAad)
+        private IEnumerable<FindData> GetStorageAccounts(string tenant, string subscription)
+        {
+            // GET https://management.azure.com/subscriptions/{subscriptionId}/providers/Microsoft.Storage/storageAccounts?api-version=2023-01-01
+
+            var subscriptionId = GetSubscriptionId(tenant, subscription);
+
+            var request = new HttpRequestMessage(HttpMethod.Get,
+                $"https://management.azure.com/subscriptions/{subscriptionId}/providers/Microsoft.Storage/storageAccounts?api-version=2023-01-01");
+
+            // TODO cache
+            var tokenCredentials = new TokenCredentials(GetAccessToken(GetTenantId(tenant).ToString()).Token);
+
+            tokenCredentials.ProcessHttpRequestAsync(request, CancellationToken.None).Wait();
+            var httpClient = new HttpClient();
+            var task = httpClient.SendAsync(request);
+            task.Wait();
+
+            var result = JsonDocument.Parse(task.Result.Content.ReadAsStringAsync().Result);
+
+            var saDic = result.RootElement.GetProperty("value").EnumerateArray()
+                .ToDictionary(p => p.GetProperty("name").GetString(),
+                    p => p.GetProperty("id").GetString());
+
+            return saDic.Select(p => new FindData(p.Key, FileAttributes.Directory));
+        }
+
+        private Guid GetTenantId(string tenant)
+        {
+            if (Guid.TryParse(tenant, out var tenantId))
+                return tenantId;
+
+            if (_tenantsDictionary == null)
             {
-                if (conn.Credential == null)
-                {
-                    // logon
-                    var tenantId = conn.TenantId;
-                    var credential = LogonToAzure(ref tenantId);
-                    if (credential == null)
-                        return null; // ?
-                    conn.Credential = credential;
-                }
-
-                if (conn.Url == null)
-                {
-                    var uri = conn.GetBaseUriFromConnectionString();
-                    return new BlobServiceClient(uri, conn.Credential);
-                }
-
-                return new BlobServiceClient(conn.Url, conn.Credential);
+                GetTenantsList();
             }
 
-            if (conn.IsStorageSAS)
-                return new BlobServiceClient(conn.Url);
-            if (conn.IsContainerSAS)
-                return null;
+            if (_tenantsDictionary.ContainsKey(tenant))
+                return _tenantsDictionary[tenant];
 
-
-            return new BlobServiceClient(conn.ConnectionString);
+            return Guid.Empty;
         }
 
-        private IEnumerable<FindData> GetAccounts()
+        private Dictionary<Guid, Dictionary<string, Guid>> _subscriptionsDictionary = new();
+
+        private Guid GetSubscriptionId(string tenant, string subscription)
         {
-            return _connections.Keys.Select(p => new FindData(p, FileAttributes.Directory));
+            var tenantId = GetTenantId(tenant);
+
+            if (!_subscriptionsDictionary.ContainsKey(tenantId))
+            {
+                GetSubscriptions(tenant); // try to read
+            }
+
+            if (_subscriptionsDictionary.ContainsKey(tenantId))
+            {
+                Guid subscriptionId;
+                if (!Guid.TryParse(tenant, out subscriptionId))
+                {
+                    if (_subscriptionsDictionary[tenantId].ContainsKey(subscription))
+                        return _subscriptionsDictionary[tenantId][subscription];
+                }
+            }
+            return Guid.Empty;
         }
 
-        private BlobClient GetBlobClient(CloudPath blobFileName)
+        private IEnumerable<FindData> GetSubscriptions(string tenant, bool reload = false)
+        {
+            var tenantId = GetTenantId(tenant);
+
+            if (!_subscriptionsDictionary.ContainsKey(tenantId) || reload)
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get,
+                    "https://management.azure.com/subscriptions?api-version=2022-12-01");
+
+                var tokenCredentials = new TokenCredentials(GetAccessToken(tenantId.ToString()).Token);
+
+                tokenCredentials.ProcessHttpRequestAsync(request, CancellationToken.None).Wait();
+                var httpClient = new HttpClient();
+                var task = httpClient.SendAsync(request);
+                task.Wait();
+
+                var result = JsonDocument.Parse(task.Result.Content.ReadAsStringAsync().Result);
+
+                var subDic = result.RootElement.GetProperty("value").EnumerateArray()
+                    .ToDictionary(p => p.GetProperty("displayName").GetString(),
+                        p => p.GetProperty("subscriptionId").GetGuid());
+
+                _subscriptionsDictionary[tenantId] = subDic;
+            }
+
+            return _subscriptionsDictionary[tenantId].Select(p => new FindData(p.Key, FileAttributes.Directory));
+        }
+
+        private AccessToken GetAccessToken(string tenantId = null)
+        {
+            // TODO Cache
+            var credential = GetAzureTokenCredential();
+
+            var requestContext =
+                new TokenRequestContext(new[] { "https://management.azure.com/.default" }, tenantId: tenantId);
+
+            var token = credential.GetToken(requestContext, CancellationToken.None);
+
+            return token;
+        }
+
+        private Azure.Core.TokenCredential GetAzureTokenCredential()
+        {
+            if (_credentialCache != null)
+                return _credentialCache; 
+
+            var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions()
+            {
+                ExcludeVisualStudioCodeCredential = true,
+                ExcludeVisualStudioCredential = true,
+                ExcludeManagedIdentityCredential = true,
+                ExcludeWorkloadIdentityCredential = true,
+                ExcludeInteractiveBrowserCredential = false
+            });
+
+            _credentialCache = credential;
+            return credential;
+        }
+
+        private static TokenCredential _credentialCache; 
+
+        private IEnumerable<FindData> GetTenantsList(bool reload = false)
+        {
+            if (_tenantsDictionary == null || reload)
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get,
+                    "https://management.azure.com/tenants?api-version=2022-12-01");
+
+                var tokenCredentials = new TokenCredentials(GetAccessToken().Token);
+
+                tokenCredentials.ProcessHttpRequestAsync(request, CancellationToken.None).Wait();
+                var httpClient = new HttpClient();
+                var task = httpClient.SendAsync(request);
+                task.Wait();
+
+                var tenantsDocument = JsonDocument.Parse(task.Result.Content.ReadAsStringAsync().Result);
+
+                _tenantsDictionary = tenantsDocument.RootElement.GetProperty("value").EnumerateArray()
+                    .ToDictionary(p => p.GetProperty("defaultDomain").GetString(),
+                        p => p.GetProperty("tenantId").GetGuid());
+            }
+
+            return _tenantsDictionary.Select(p => new FindData(p.Key, FileAttributes.Directory) );
+        }
+
+        private BlobClient GetBlobClient(BlobStoragePath path)
         {
             try
             {
-                return GetAccountClient(blobFileName.AccountName)
-                    ?.GetBlobContainerClient(blobFileName.ContainerName)
-                    ?.GetBlobClient(blobFileName.BlobName);
+                var containerClient = GetBlobContainerClient(path);
+                return containerClient.GetBlobClient(path.BlobPath);
+
+                //if (azurePath.IsConfigItemPath)
+                //{
+
+                //    var containerClient = GetBlobContainerClient(azurePath);
+                //    return containerClient.GetBlobClient(azurePath.BlobPath);
+                //}
+
+                //var tokenCredential = GetAzureTokenCredential();
+                //return new BlobClient(GetBlobUri(azurePath), tokenCredential);
+
+                //return GetAccountClient(azurePath.AccountName)
+                //    ?.GetBlobContainerClient(azurePath.ContainerName)
+                //    ?.GetBlobClient(azurePath.BlobName);
             }
             catch
             {
@@ -601,24 +786,129 @@ namespace TcPlugin.AzureBlobStorage
             }
         }
 
-        private IEnumerable<FindData> GetBlobs(CloudPath path)
+        private BlockBlobClient GetBlockBlobClient(BlobStoragePath path)
         {
-            var prefix = path.Prefix;
-            if (prefix.Length > 0)
+            try
+            {
+                var containerClient = GetBlobContainerClient(path);
+                return containerClient.GetBlockBlobClient(path.BlobPath);
+
+                //if (azurePath.IsConfigItemPath)
+                //{
+                //    var connection = GetStorageConnection(azurePath);
+                //    return new BlockBlobClient(connection.ConnectionString, azurePath.ContainerName, azurePath.BlobPath);
+                //}
+
+                //var tokenCredential = GetAzureTokenCredential();
+                //return new BlockBlobClient(GetBlobUri(azurePath), tokenCredential);
+
+                //return GetAccountClient(blobFileName.AccountName)
+                //    ?.GetBlobContainerClient(blobFileName.ContainerName)
+                //    ?.GetBlockBlobClient(blobFileName.BlobName);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+
+        private static Dictionary<string, BlobContainerClient> _blobContainerClientCache = new Dictionary<string, BlobContainerClient>();
+
+        private BlobContainerClient GetBlobContainerClient(BlobStoragePath path)
+        {
+            BlobContainerClient containerClient;
+
+            if (path.IsConfigurationBased)
+            {
+                if (_blobContainerClientCache.ContainsKey(path.ContainerName))
+                {
+                    containerClient = _blobContainerClientCache[path.ContainerName];
+                }
+                else
+                {
+                    var connection = _connections[path.AccountName];
+                    var connectionType = GetConnectionType(connection);
+
+                    switch (connectionType)
+                    {
+                        case BlobConnectionType.ContainerUrl:
+                        case BlobConnectionType.ContainerUrlWithSAS:
+                            containerClient = new BlobContainerClient(new Uri(connection));
+                            break;
+                        case BlobConnectionType.ServiceUrlWithSAS:
+                            containerClient = new BlobServiceClient(new Uri(connection)).GetBlobContainerClient(path.ContainerName);
+                            break;
+                        case BlobConnectionType.ServiceUrl:
+                            containerClient = new BlobServiceClient(new Uri(connection), GetAzureTokenCredential()).GetBlobContainerClient(path.ContainerName);
+                            break;
+                        default:
+                            containerClient = new BlobContainerClient(connection, path.ContainerName);
+                            break;
+                    }
+
+                    _blobContainerClientCache.Add(path.ContainerName, containerClient);
+                }
+            }
+            else
+            {
+                var endpoint = GetEndpointUri(path);
+                if (_blobContainerClientCache.ContainsKey(endpoint.ToString()))
+                {
+                    containerClient = _blobContainerClientCache[endpoint.ToString()];
+                }
+                else
+                {
+                    containerClient = new BlobContainerClient(endpoint, GetAzureTokenCredential());
+                    _blobContainerClientCache.Add(endpoint.ToString(), containerClient);
+                }
+            }
+            return containerClient;
+        }
+
+        private BlobServiceClient GetBlobServiceClient(BlobStoragePath path)
+        {
+            if (path.IsConfigurationBased)
+            {
+                var connection = _connections[path.AccountName];
+                var connectionType = GetConnectionType(connection);
+
+                switch (connectionType)
+                {
+                    case BlobConnectionType.ContainerUrl:
+                    case BlobConnectionType.ServiceUrl:
+                        return new BlobServiceClient(new Uri(new Uri(connection).GetComponents(UriComponents.SchemeAndServer, UriFormat.UriEscaped)), GetAzureTokenCredential());
+                    default:
+                        return new BlobServiceClient(new Uri(connection));
+                }
+            }
+            else
+            {
+                var endpoint = GetEndpointUri(path);
+                return new BlobServiceClient(new Uri(endpoint.GetComponents(UriComponents.SchemeAndServer, UriFormat.UriEscaped)), GetAzureTokenCredential());
+            }
+        }
+
+        private IEnumerable<FindData> GetBlobs(BlobStoragePath azurePath)
+        {
+            var prefix = azurePath.BlobPath;
+            if (prefix.Length > 0 && !prefix.EndsWith("/"))
                 prefix += "/";
 
-            BlobContainerClient container;
+            //BlobContainerClient container;
 
-            var connection = GetStorageConnection(path);
-            if (!connection.IsContainerSAS)
-                container = GetAccountClient(path.AccountName)?.GetBlobContainerClient(path.ContainerName);
-            else
-                container = new BlobContainerClient(connection.Url);
+            //var connection = GetStorageConnection(path);
+            //if (!connection.IsContainerSAS)
+            //    container = GetAccountClient(path.AccountName)?.GetBlobContainerClient(path.ContainerName);
+            //else
+            //    container = new BlobContainerClient(connection.Url);
 
-            if (container == null) return Array.Empty<FindData>();
+            //if (container == null) return Array.Empty<FindData>();
+
+            var containerClient = GetBlobContainerClient(azurePath);
 
             var list = new List<FindData>();
-            var items = container.GetBlobsByHierarchy(BlobTraits.Metadata, BlobStates.None, "/", prefix);
+            var items = containerClient.GetBlobsByHierarchy(BlobTraits.Metadata, BlobStates.None, "/", prefix);
 
             foreach (var blobItem in items)
             {
@@ -640,37 +930,54 @@ namespace TcPlugin.AzureBlobStorage
                 list.Add(findData);
 
                 if (blobItem.Blob != null)
-                    _blobItemPropertiesCache[path.Path.Trim('/') + '/' + findData.FileName] = blobItem.Blob.Properties;
+                    _blobItemPropertiesCache[azurePath.Path.Trim('/') + '/' + findData.FileName] = blobItem.Blob.Properties;
             }
 
             return _pathCache
-                .WithCached(path, list)
+                .WithCached(azurePath, list)
                 .DefaultIfEmpty(new FindData("..", FileAttributes.Directory));
         }
 
-        private BlockBlobClient GetBlockBlobClient(CloudPath blobFileName)
+
+        private IEnumerable<FindData> GetContainers(BlobStoragePath azurePath)
         {
-            try
+            //var connection = GetStorageConnection(accountName);
+
+            //// show container name again
+            //if (connection.IsContainerSAS)
+            //    return new[] { new FindData(connection.ContainerName, FileAttributes.Directory) };
+            //var tokenCredentials = new TokenCredentials(GetAccessToken(GetTenantId(tenant).ToString()).Token);
+
+            BlobServiceClient client;
+
+            if (azurePath.IsConfigurationBased)
             {
-                return GetAccountClient(blobFileName.AccountName)
-                    ?.GetBlobContainerClient(blobFileName.ContainerName)
-                    ?.GetBlockBlobClient(blobFileName.BlobName);
+                var connection = _connections[azurePath.AccountName];
+                var connectionType = GetConnectionType(connection);
+
+                switch (connectionType)
+                {
+                    case BlobConnectionType.ContainerUrl:
+                    case BlobConnectionType.ContainerUrlWithSAS:
+                        var uri = new Uri(connection);
+                        return new List<FindData> { new FindData(uri.AbsolutePath.Trim('/'), FileAttributes.Directory) };
+                    case BlobConnectionType.ServiceUrlWithSAS:
+                        client = new BlobServiceClient(new Uri(connection));
+                        break;
+                    case BlobConnectionType.ServiceUrl:
+                        client = new BlobServiceClient(new Uri(connection), GetAzureTokenCredential());
+                        break;
+                    default:
+                        client = new BlobServiceClient(connection);
+                        break;
+                }
             }
-            catch
+            else
             {
-                return null;
+                client = new BlobServiceClient(GetEndpointUri(azurePath), GetAzureTokenCredential());
             }
-        }
 
-        private IEnumerable<FindData> GetContainers(string accountName)
-        {
-            var connection = GetStorageConnection(accountName);
-
-            // show container name again
-            if (connection.IsContainerSAS)
-                return new[] { new FindData(connection.ContainerName, FileAttributes.Directory) };
-
-            var client = GetAccountClient(accountName);
+            //var client = GetAccountClient(accountName);
             if (client == null) return Enumerable.Empty<FindData>();
 
             try
@@ -686,131 +993,218 @@ namespace TcPlugin.AzureBlobStorage
             }
             catch (RequestFailedException exp)
             {
-                if (exp.ErrorCode == "KeyBasedAuthenticationNotPermitted")
+                if (exp.Status == 401)
                 {
-                    // need to try using AD
-                    connection.UseActiveDirectory = true;
-                    return GetContainers(accountName); // retry
+                    // try with re authentication
+                    _credentialCache = new InteractiveBrowserCredential();
+                    return GetContainers(azurePath);
                 }
+
+                //if (exp.ErrorCode == "KeyBasedAuthenticationNotPermitted")
+                //{
+                //    // need to try using AD
+                //    //connection.UseActiveDirectory = true;
+                //    return GetContainers(accountName); // retry
+                //}
 
                 // AuthorizationPermissionMismatch
-                MessageBox.Show($"Cannot connect to Azure {exp.ErrorCode}", "Azure Error", MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                MessageBox.Show($"Cannot connect to Azure {exp.ErrorCode}", "Azure Error", MessageBoxButtons.OK);
                 return null;
             }
         }
 
-        private StorageConnection GetStorageConnection(CloudPath cloudPath)
-        {
-            return _connections[cloudPath.AccountName];
-        }
+        //private string GetConnectionString(BlobStoragePath azurePath)
+        //{
+        //    // DefaultEndpointsProtocol=https;AccountName=zmrsd1saai;AccountKey=...==;EndpointSuffix=core.windows.net
+        //    return $"Endpoint=https://{azurePath.AccountName}.blob.core.windows.net";
+        //}
 
-        private StorageConnection GetStorageConnection(string accountName)
+        private Uri GetEndpointUri(BlobStoragePath azurePath)
         {
-            return _connections[accountName];
-        }
-
-        private IEnumerable<ISubscription> GetSubscriptions(string tenantId, ref TokenCredential tokenCredential)
-        {
-            var _requestContext =
-                new TokenRequestContext(new[] { "https://management.azure.com/.default" }, tenantId: tenantId);
-
-            if (tokenCredential == null)
+            // DefaultEndpointsProtocol=https;AccountName=zmrsd1saai;AccountKey=...==;EndpointSuffix=core.windows.net
+            if (!string.IsNullOrEmpty(azurePath.ContainerName))
             {
-                var newTokenCredential = new InteractiveBrowserCredential(
-                    new InteractiveBrowserCredentialOptions { TenantId = tenantId });
-                var auth = newTokenCredential.Authenticate(_requestContext);
-
-                if (auth == null)
-                {
-                    tokenCredential = null;
-                    return null;
-                }
-
-                tokenCredential = newTokenCredential;
+                return new Uri($"https://{azurePath.AccountName}.blob.core.windows.net/{azurePath.ContainerName}");
             }
-
-            var token = tokenCredential.GetToken(_requestContext, CancellationToken.None);
-            var tokenCredentials = new TokenCredentials(token.Token);
-            var azureCredentials = new AzureCredentials(tokenCredentials, tokenCredentials, tenantId,
-                AzureEnvironment.AzureGlobalCloud);
-
-            //var subscriptionClient = new Microsoft.Azure.Management.ResourceManager.SubscriptionClient(tokenCredentials);
-            //return subscriptionClient.Subscriptions.List();
-
-            var azure = Microsoft.Azure.Management.Fluent.Azure.Authenticate(azureCredentials);
-            var subscriptions = azure.Subscriptions.List();
-            return subscriptions;
+            return new Uri($"https://{azurePath.AccountName}.blob.core.windows.net");
         }
 
-        private Dictionary<string, string> GetTenants(out TokenCredential tokenCredential,
-            out string authenticatedTenantId)
+        //private Uri GetBlobUri(BlobStoragePath azurePath)
+        //{
+        //    return new Uri($"https://{azurePath.AccountName}.blob.core.windows.net/{azurePath.ContainerName}/{azurePath.BlobPath}");
+        //}
+
+        //private StorageConnection GetStorageConnection(BlobStoragePath cloudPath)
+        //{
+        //    return _connections[cloudPath.AccountName];
+        //}
+
+        //private StorageConnection GetStorageConnection(string accountName)
+        //{
+        //    return _connections[accountName];
+        //}
+
+        //private IEnumerable<ISubscription> GetSubscriptions(string tenantId, ref Azure.Core.TokenCredential tokenCredential)
+        //{
+        //    var _requestContext =
+        //        new TokenRequestContext(new[] { "https://management.azure.com/.default" }, tenantId: tenantId);
+
+        //    if (tokenCredential == null)
+        //    {
+        //        var newTokenCredential = new InteractiveBrowserCredential(
+        //            new InteractiveBrowserCredentialOptions { TenantId = tenantId });
+        //        var auth = newTokenCredential.Authenticate(_requestContext);
+
+        //        if (auth == null)
+        //        {
+        //            tokenCredential = null;
+        //            return null;
+        //        }
+
+        //        tokenCredential = newTokenCredential;
+        //    }
+
+        //    var token = tokenCredential.GetToken(_requestContext, CancellationToken.None);
+        //    var tokenCredentials = new TokenCredentials(token.Token);
+        //    var azureCredentials = new AzureCredentials(tokenCredentials, tokenCredentials, tenantId,
+        //        AzureEnvironment.AzureGlobalCloud);
+
+        //    //var subscriptionClient = new Microsoft.Azure.Management.ResourceManager.SubscriptionClient(tokenCredentials);
+        //    //return subscriptionClient.Subscriptions.List();
+
+        //    var azure = Microsoft.Azure.Management.Fluent.Azure.Authenticate(azureCredentials);
+        //    var subscriptions = azure.Subscriptions.List();
+        //    return subscriptions;
+        //}
+
+        //private Dictionary<string, string> GetTenants(out TokenCredential tokenCredential,
+        //    out string authenticatedTenantId)
+        //{
+        //    var _requestContext =
+        //        new TokenRequestContext(new[] { "https://management.azure.com/.default" });
+
+        //    authenticatedTenantId = null;
+        //    tokenCredential = LogonToAzure(ref authenticatedTenantId);
+
+        //    var token = tokenCredential.GetToken(_requestContext, CancellationToken.None);
+        //    var tokenCredentials = new TokenCredentials(token.Token);
+        //    //var azureCredentials = new AzureCredentials(tokenCredentials, tokenCredentials, null, AzureEnvironment.AzureGlobalCloud);
+
+        //    var request = new HttpRequestMessage(HttpMethod.Get,
+        //        "https://management.azure.com/tenants?api-version=2020-01-01");
+        //    tokenCredentials.ProcessHttpRequestAsync(request, CancellationToken.None).Wait();
+        //    var httpClient = new HttpClient();
+        //    var task = httpClient.SendAsync(request);
+        //    task.Wait();
+
+        //    var tenantsDocument = JsonDocument.Parse(task.Result.Content.ReadAsStringAsync().Result);
+
+        //    var tenantsDic = tenantsDocument.RootElement.GetProperty("value").EnumerateArray()
+        //        .ToDictionary(p => p.GetProperty("tenantId").GetString(),
+        //            p => p.GetProperty("displayName").GetString());
+
+        //    return tenantsDic;
+
+        //    //var subscriptionClient = new Microsoft.Azure.Management.ResourceManager.SubscriptionClient(tokenCredentials);
+        //    //return subscriptionClient.Tenants.List();
+
+        //    // this just returns only the id. no display name
+        //    //return Microsoft.Azure.Management.Fluent.Azure
+        //    //    .Authenticate(azureCredentials)
+        //    //    .Tenants
+        //    //    .List();
+        //}
+
+        //private TokenCredential LogonToAzure(ref string tenantId)
+        //{
+        //    try
+        //    {
+        //        var _requestContext =
+        //            new TokenRequestContext(new[] { "https://management.azure.com/.default" }, tenantId: tenantId);
+
+        //        var tokenCredential = new InteractiveBrowserCredential(
+        //            new InteractiveBrowserCredentialOptions { TenantId = tenantId });
+        //        var auth = tokenCredential.Authenticate(_requestContext);
+
+        //        if (auth == null)
+        //            return null;
+
+        //        if (tenantId == null)
+        //            tenantId = auth.TenantId;
+
+        //        var token = tokenCredential.GetToken(_requestContext, CancellationToken.None);
+        //        return tokenCredential;
+        //    }
+        //    catch
+        //    {
+        //        return null;
+        //    }
+        //}
+
+        //private void SetOwnerWindow(Window window)
+        //{
+        //    var wih = new WindowInteropHelper(window);
+        //    wih.Owner = Process.GetCurrentProcess().MainWindowHandle;
+        //}
+
+        public void AddConfiguration(string name, string connection)
         {
-            var _requestContext =
-                new TokenRequestContext(new[] { "https://management.azure.com/.default" });
-
-            authenticatedTenantId = null;
-            tokenCredential = LogonToAzure(ref authenticatedTenantId);
-
-            var token = tokenCredential.GetToken(_requestContext, CancellationToken.None);
-            var tokenCredentials = new TokenCredentials(token.Token);
-            //var azureCredentials = new AzureCredentials(tokenCredentials, tokenCredentials, null, AzureEnvironment.AzureGlobalCloud);
-
-            var request = new HttpRequestMessage(HttpMethod.Get,
-                "https://management.azure.com/tenants?api-version=2020-01-01");
-            tokenCredentials.ProcessHttpRequestAsync(request, CancellationToken.None).Wait();
-            var httpClient = new HttpClient();
-            var task = httpClient.SendAsync(request);
-            task.Wait();
-
-            var tenantsDocument = JsonDocument.Parse(task.Result.Content.ReadAsStringAsync().Result);
-
-            var tenantsDic = tenantsDocument.RootElement.GetProperty("value").EnumerateArray()
-                .ToDictionary(p => p.GetProperty("tenantId").GetString(),
-                    p => p.GetProperty("displayName").GetString());
-
-            return tenantsDic;
-
-            //var subscriptionClient = new Microsoft.Azure.Management.ResourceManager.SubscriptionClient(tokenCredentials);
-            //return subscriptionClient.Tenants.List();
-
-            // this just returns only the id. no display name
-            //return Microsoft.Azure.Management.Fluent.Azure
-            //    .Authenticate(azureCredentials)
-            //    .Tenants
-            //    .List();
+            if (_connections.ContainsKey(name))
+                _connections[name] = connection;
+            else
+                _connections.Add(name, connection);
+            SaveConnections();
         }
 
-        private TokenCredential LogonToAzure(ref string tenantId)
+        public BlobConnectionType GetConnectionType(string connection)
         {
-            try
+            if (Uri.TryCreate(connection, UriKind.Absolute, out var uri))
             {
-                var _requestContext =
-                    new TokenRequestContext(new[] { "https://management.azure.com/.default" }, tenantId: tenantId);
-
-                var tokenCredential = new InteractiveBrowserCredential(
-                    new InteractiveBrowserCredentialOptions { TenantId = tenantId });
-                var auth = tokenCredential.Authenticate(_requestContext);
-
-                if (auth == null)
-                    return null;
-
-                if (tenantId == null)
-                    tenantId = auth.TenantId;
-
-                var token = tokenCredential.GetToken(_requestContext, CancellationToken.None);
-                return tokenCredential;
+                var sas = uri.Query.Contains("sig=");
+                if (uri.AbsolutePath == "/")
+                    return sas ? BlobConnectionType.ServiceUrlWithSAS : BlobConnectionType.ServiceUrl;
+                else
+                    return sas ? BlobConnectionType.ContainerUrlWithSAS : BlobConnectionType.ContainerUrl;
             }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private void SetOwnerWindow(Window window)
-        {
-            var wih = new WindowInteropHelper(window);
-            wih.Owner = Process.GetCurrentProcess().MainWindowHandle;
+            var parts = connection.Split(';').ToDictionary(p => p.Split('=')[0], p => p.Split('=')[1], StringComparer.OrdinalIgnoreCase);
+            if (parts.ContainsKey("SharedAccessSignature"))
+                return BlobConnectionType.ConnectionStringWithSAS;
+            return BlobConnectionType.ConnectionString;
         }
     }
+
+    public enum BlobConnectionType
+    {
+        ServiceUrlWithSAS,
+        ContainerUrlWithSAS,
+        ConnectionString,
+        ServiceUrl,
+        ContainerUrl,
+        ConnectionStringWithSAS,
+    }
+
+
+
+    //public class TenantInfo
+    //{
+    //    public Guid TenantId { get; set; }
+    //    public string Name { get; set; }
+    //    public AccessToken AccessToken { get; set; }
+
+    //}
+
+    //public class SubscriptionInfo
+    //{
+    //    public Guid SubscriptionId { get; set; }
+    //    public string Name { get; set; }
+    //}
+
+    //public class StorageAccountInfo
+    //{
+    //    public string Name { get; set; }
+    //    public string Id  { get; set; }
+    //    public Uri BlobEndpoint { get; set; }
+    //}
+
 }
+
