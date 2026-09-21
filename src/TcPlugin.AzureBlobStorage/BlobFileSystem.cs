@@ -48,9 +48,19 @@ namespace TcPlugin.AzureBlobStorage
             _connections.Load();
         }
 
-        public void AddConnection(string name, string connection)
+        public void AddOrUpdateConnection(string name, string connection)
         {
             _connections.AddOrUpdate(name.TrimStart(BlobStoragePath.ConnectionPrefix[0]), connection);
+        }
+
+        public string GetConnection(string name)
+        {
+            return _connections.Get(name);
+        }
+
+        public void RemoveConnection(string name)
+        {
+            _connections.Remove(name);
         }
 
         public IEnumerable<FindData> ListDirectory(BlobStoragePath path)
@@ -58,7 +68,13 @@ namespace TcPlugin.AzureBlobStorage
             if (path.Level == 0)
             {
                 return ToDirectories(_resourceManager.GetTenants())
-                    .Concat(ToDirectories(_connections.Names.Select(name => BlobStoragePath.ConnectionPrefix + name)));
+                    .Concat(ToDirectories(_connections.Names.Select(name => BlobStoragePath.ConnectionPrefix + name)))
+                    .Append(new FindData(BlobStoragePath.ConnectionsRootName, FileAttributes.Directory));
+            }
+
+            if (path.Level == 1 && path.IsConnectionsPath)
+            {
+                return _connections.Names.Select(p => new FindData(p, FileAttributes.Normal));
             }
 
             if (path.IsBlobPath || path.IsContainerPath)

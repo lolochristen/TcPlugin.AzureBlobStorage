@@ -15,6 +15,8 @@ namespace TcPlugin.AzureBlobStorage.Paths
     {
         public const string ConnectionPrefix = "#";
 
+        public const string ConnectionsRootName = "Connections";
+
         private static readonly char[] Separators = { '\\', '/' };
 
         private readonly string[] _segments;
@@ -77,6 +79,8 @@ namespace TcPlugin.AzureBlobStorage.Paths
 
         /// <summary>Path up to and including the container, e.g. <c>/#connection/container</c>.</summary>
         public string ContainerPath => "/" + string.Join("/", Segments.Take(ContainerLevel));
+
+        public bool IsConnectionsPath => GetSegment(1) == ConnectionsRootName;
 
         /// <param name="level">1-based segment level.</param>
         /// <returns>The segment or null if the level does not exist.</returns>

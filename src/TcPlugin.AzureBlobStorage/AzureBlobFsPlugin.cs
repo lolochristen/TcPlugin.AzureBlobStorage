@@ -1,3 +1,4 @@
+using Azure.Storage.Blobs.Models;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -43,19 +44,19 @@ namespace TcPlugin.AzureBlobStorage
 
         public override bool MkDir(RemotePath dir)
         {
-            if (dir.Level != 1)
+            if ((dir.Level == 2 && dir.GetSegment(1) == BlobStoragePath.ConnectionsRootName) || dir.Level == 1)
             {
-                return _fileSystem.CreateDirectory(dir);
+                var connection = Prompt.AskUrl("Blob Connection String or URL:");
+                if (string.IsNullOrEmpty(connection))
+                {
+                    return false;
+                }
+
+                _fileSystem.AddOrUpdateConnection(dir.FileName, connection);
+                return true;
             }
 
-            var connection = Prompt.AskUrl("Blob Connection String or URL:");
-            if (string.IsNullOrEmpty(connection))
-            {
-                return false;
-            }
-
-            _fileSystem.AddConnection(dir.FileName, connection);
-            return true;
+            return _fileSystem.CreateDirectory(dir);
         }
 
         public override bool RemoveDir(RemotePath dirName)
@@ -65,6 +66,12 @@ namespace TcPlugin.AzureBlobStorage
 
         public override bool DeleteFile(RemotePath fileName)
         {
+            if (fileName.Level == 2 && fileName.GetSegment(1) == BlobStoragePath.ConnectionsRootName)
+            {
+                _fileSystem.RemoveConnection(fileName.FileName);
+                return true;
+            }
+
             return _fileSystem.DeleteFile(fileName).Result;
         }
 
@@ -130,6 +137,16 @@ namespace TcPlugin.AzureBlobStorage
 
         public override ExecResult ExecuteOpen(TcWindow mainWin, RemotePath remoteName)
         {
+            if (remoteName.Level == 2 && remoteName.GetSegment(1) == BlobStoragePath.ConnectionsRootName)
+            {
+                var connection = Prompt.AskUrl("Update Connection String or Url", _fileSystem.GetConnection(remoteName.FileName));
+                if (!string.IsNullOrEmpty(connection))
+                {
+                    _fileSystem.AddOrUpdateConnection(remoteName.FileName, connection);
+                }
+                return ExecResult.Ok;
+            }
+
             return ExecResult.Yourself;
         }
 
@@ -159,14 +176,18 @@ namespace TcPlugin.AzureBlobStorage
 
             if (path.IsConnectionPath)
             {
-                return path.IsConnectionRoot ? Icons.settings_icon : null;
+                return path.IsConnectionRoot ? Icons.storage_account : null;
             }
 
             switch (path.Level)
             {
                 case 1:
+                    if (path.IsConnectionsPath)
+                        return Icons.settings_icon;
                     return Icons.tenant;
                 case 2:
+                    if (path.IsConnectionsPath)
+                        return Icons.settings_icon;
                     return Icons.subscription;
                 case 3:
                     return Icons.storage_account;
