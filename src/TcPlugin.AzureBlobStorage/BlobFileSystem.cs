@@ -124,6 +124,12 @@ namespace TcPlugin.AzureBlobStorage
                 return _connections.Remove(directory.AccountName);
             }
 
+            if (directory.IsContainerPath)
+            {
+                _clients.GetServiceClient(directory).DeleteBlobContainer(directory.ContainerName);
+                return true;
+            }
+
             return directory.IsBlobPath && removedFromCache;
         }
 
