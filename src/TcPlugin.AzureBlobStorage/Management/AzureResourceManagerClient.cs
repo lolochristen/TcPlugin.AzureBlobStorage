@@ -15,6 +15,8 @@ namespace TcPlugin.AzureBlobStorage.Management
     internal class AzureResourceManagerClient
     {
         private const string BaseUrl = "https://management.azure.com";
+        private const string TenantsUrl = "/tenants?api-version=2022-12-01";
+        private const string SubscriptionsUrl = "/subscriptions?api-version=2022-12-01";
 
         private static readonly HttpClient HttpClient = new HttpClient();
 
@@ -42,19 +44,42 @@ namespace TcPlugin.AzureBlobStorage.Management
         /// <returns>Names of all storage accounts in the subscription.</returns>
         public IEnumerable<string> GetStorageAccounts(string tenant, string subscription)
         {
-            var tenantId = ResolveTenantId(tenant);
-            var subscriptionId = ResolveSubscriptionId(tenantId, subscription);
-
-            return GetValues(
-                    $"/subscriptions/{subscriptionId}/providers/Microsoft.Storage/storageAccounts?api-version=2023-01-01",
-                    tenantId)
+            return ListStorageAccounts(tenant, subscription)
                 .Select(p => p.GetProperty("name").GetString())
                 .ToList();
         }
 
+        public JsonElement GetTenantDetails(string tenant)
+        {
+            var tenantId = ResolveTenantId(tenant);
+            return GetValues(TenantsUrl, null).First(p => p.GetProperty("tenantId").GetGuid() == tenantId);
+        }
+
+        public JsonElement GetSubscriptionDetails(string tenant, string subscription)
+        {
+            var tenantId = ResolveTenantId(tenant);
+            var subscriptionId = ResolveSubscriptionId(tenantId, subscription);
+            return GetValues(SubscriptionsUrl, tenantId).First(p => p.GetProperty("subscriptionId").GetGuid() == subscriptionId);
+        }
+
+        public JsonElement GetStorageAccountDetails(string tenant, string subscription, string account)
+        {
+            return ListStorageAccounts(tenant, subscription).First(p => p.GetProperty("name").GetString() == account);
+        }
+
+        private List<JsonElement> ListStorageAccounts(string tenant, string subscription)
+        {
+            var tenantId = ResolveTenantId(tenant);
+            var subscriptionId = ResolveSubscriptionId(tenantId, subscription);
+
+            return GetValues(
+                $"/subscriptions/{subscriptionId}/providers/Microsoft.Storage/storageAccounts?api-version=2023-01-01",
+                tenantId);
+        }
+
         private Dictionary<string, Guid> GetTenantLookup()
         {
-            return _tenants ??= GetValues("/tenants?api-version=2022-12-01", null)
+            return _tenants ??= GetValues(TenantsUrl, null)
                 .ToDictionary(p => p.GetProperty("defaultDomain").GetString(), p => p.GetProperty("tenantId").GetGuid());
         }
 
@@ -62,7 +87,7 @@ namespace TcPlugin.AzureBlobStorage.Management
         {
             if (!_subscriptionsByTenant.TryGetValue(tenantId, out var subscriptions))
             {
-                subscriptions = GetValues("/subscriptions?api-version=2022-12-01", tenantId)
+                subscriptions = GetValues(SubscriptionsUrl, tenantId)
                     .ToDictionary(p => p.GetProperty("displayName").GetString(), p => p.GetProperty("subscriptionId").GetGuid());
                 _subscriptionsByTenant[tenantId] = subscriptions;
             }

@@ -4,16 +4,14 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Forms;
 using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using TcPlugin.AzureBlobStorage.Authentication;
 using TcPlugin.AzureBlobStorage.Connections;
+using TcPlugin.AzureBlobStorage.Details;
 using TcPlugin.AzureBlobStorage.Management;
 using TcPlugin.AzureBlobStorage.Paths;
 using TcPlugin.AzureBlobStorage.Storage;
@@ -32,6 +30,7 @@ namespace TcPlugin.AzureBlobStorage
         private readonly BlobClientFactory _clients;
         private readonly ConnectionStore _connections = new ConnectionStore();
         private readonly AzureCredentialProvider _credential = new AzureCredentialProvider();
+        private readonly ItemDetailsProvider _details;
         private readonly PathCache _pathCache = new PathCache();
         private readonly AzureResourceManagerClient _resourceManager;
 
@@ -39,6 +38,7 @@ namespace TcPlugin.AzureBlobStorage
         {
             _clients = new BlobClientFactory(_connections, _credential);
             _resourceManager = new AzureResourceManagerClient(_credential);
+            _details = new ItemDetailsProvider(_connections, _clients, _resourceManager);
 
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
         }
@@ -262,25 +262,10 @@ namespace TcPlugin.AzureBlobStorage
             }
         }
 
-        public bool ShowProperties(BlobStoragePath path)
+        /// <returns>The properties of the item, or null if it has none to show.</returns>
+        internal PropertySheet GetProperties(BlobStoragePath path)
         {
-            if (!path.IsBlobPath)
-            {
-                return false;
-            }
-
-            var blob = _clients.TryGetBlobClient(path);
-            if (blob is null)
-            {
-                return false;
-            }
-
-            var properties = blob.GetProperties().Value;
-            var json = JsonSerializer.Serialize(properties,
-                new JsonSerializerOptions { WriteIndented = true, Converters = { new JsonStringEnumConverter() } });
-
-            MessageBox.Show(json, "Properties " + path.BlobPath, MessageBoxButtons.OK);
-            return true;
+            return _details.Get(path);
         }
 
         private async Task<FileSystemExitCode> CopyBlob(BlobStoragePath source, BlobStoragePath destination, bool overwrite,

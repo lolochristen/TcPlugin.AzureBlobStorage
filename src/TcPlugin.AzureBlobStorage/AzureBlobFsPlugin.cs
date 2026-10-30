@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using TcPlugin.AzureBlobStorage.Details;
 using TcPlugin.AzureBlobStorage.Paths;
 using TcPlugin.AzureBlobStorage.Resources;
 using TcPlugin.AzureBlobStorage.Storage;
@@ -241,7 +242,14 @@ namespace TcPlugin.AzureBlobStorage
         {
             try
             {
-                return _fileSystem.ShowProperties(remoteName) ? ExecResult.Ok : ExecResult.Yourself;
+                var sheet = _fileSystem.GetProperties(remoteName);
+                if (sheet is null)
+                {
+                    return ExecResult.Yourself;
+                }
+
+                PropertySheetDialog.Show(mainWin, sheet);
+                return ExecResult.Ok;
             }
             catch (Exception exp)
             {

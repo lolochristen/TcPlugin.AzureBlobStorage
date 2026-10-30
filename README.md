@@ -10,7 +10,7 @@ Browse your storage accounts, containers and blobs like a regular drive. Copy fi
 - Upload and download with progress and background transfer support; the content type is set from the file extension on upload
 - Copy and move blobs within storage (server-side copy)
 - Create and delete containers; create virtual folders
-- Show blob properties (`Alt+Enter`)
+- Show properties of tenants, subscriptions, storage accounts, connections, containers and blobs (`Alt+Enter`)
 - Custom columns for blob properties such as `AccessTier`, `BlobType`, `ContentType` and `ETag`
 
 ## Installation

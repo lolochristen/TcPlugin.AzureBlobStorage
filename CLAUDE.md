@@ -35,6 +35,7 @@ The plugin is built on `TcPluginBase` (brought in by `TcBuild`). TC callbacks ar
   - `Authentication/AzureCredentialProvider`: a single `TokenCredential` shared by every client. After a 401 it can switch to an interactive browser login once, without recreating the clients.
   - `Management/AzureResourceManagerClient`: raw ARM REST calls for tenants, subscriptions and storage accounts, with cached name→id lookups.
   - `Storage/BlobClientFactory`: builds service, container and blob clients for a path. Container clients are cached by `ContainerPath`, and the cache is cleared when connections change. `TryGet*` methods return null when no client can be created. Every client must use `CreateOptions`, which keeps SDK retries short because TC waits for most calls.
+  - `Details/`: `ItemDetailsProvider` loads the properties of the item a path points to, `ItemSheets` maps them to a `PropertySheet`, and `PropertySheetDialog` shows it. Connection strings and URLs must go through `PropertyFormat` (`MaskSecrets`, `WithoutQuery`), so account keys and SAS tokens never appear.
   - `Storage/PercentProgress`: turns transferred bytes into TC progress percentages, reported synchronously and only when the value changes.
 
 ### Path model (`BlobStoragePath`)
