@@ -52,5 +52,5 @@ Blob storage has no real folders. Directories are virtual prefixes listed with `
 ### Saved connections
 
 - Creating a directory at level 1 asks for a connection string or URL (`Prompt.AskUrl`) and saves it. Removing a connection root deletes the saved connection.
-- Connection types are service or container URL, with or without a SAS token (`sig=`), or a connection string, with or without `SharedAccessSignature`. Service URLs without a SAS token authenticate with the shared AAD credential. Container URLs expose exactly one container, and their container client is created without a credential (anonymous access unless a SAS token is present).
+- Connection types are service or container URL, with or without a SAS token (`sig=`), or a connection string, with or without `SharedAccessSignature`. Service URLs without a SAS token authenticate with the shared AAD credential. A connection string may add `ContainerName=`, which the SDK rejects, so it must reach the SDK through `GetSdkConnectionString`; like a container URL, it limits the connection to that container (`GetScopedContainer`). Container URLs expose exactly one container, and their container client is created without a credential (anonymous access unless a SAS token is present).
 - Connections are saved as JSON encrypted with DPAPI (CurrentUser scope) to `%APPDATA%\FsAzureStorage\connections.bin`.

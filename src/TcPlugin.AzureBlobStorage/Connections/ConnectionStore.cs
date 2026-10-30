@@ -13,6 +13,8 @@ namespace TcPlugin.AzureBlobStorage.Connections
     /// </summary>
     public class ConnectionStore
     {
+        private const string ContainerNameSetting = "ContainerName=";
+
         private static readonly string SettingsPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FsAzureStorage", "connections.bin");
 
@@ -67,8 +69,35 @@ namespace TcPlugin.AzureBlobStorage.Connections
         {
             if (!Uri.TryCreate(connection, UriKind.Absolute, out _))
             {
-                _ = new BlobServiceClient(connection);
+                _ = new BlobServiceClient(GetSdkConnectionString(connection));
             }
+        }
+
+        /// <returns>The only container this connection gives access to, or null if it covers a whole account.</returns>
+        public static string GetScopedContainer(string connection)
+        {
+            if (Uri.TryCreate(connection, UriKind.Absolute, out var uri))
+            {
+                var container = uri.AbsolutePath.Trim('/');
+                return container.Length == 0 ? null : container;
+            }
+
+            var value = connection.Split(';').FirstOrDefault(IsContainerNameSetting)?.Trim().Substring(ContainerNameSetting.Length);
+            return string.IsNullOrEmpty(value) ? null : value;
+        }
+
+        /// <summary>
+        ///     Removes the <c>ContainerName</c> setting that tools such as .NET Aspire add to connection strings. The SDK
+        ///     rejects every setting it doesn't know.
+        /// </summary>
+        public static string GetSdkConnectionString(string connection)
+        {
+            return string.Join(";", connection.Split(';').Where(segment => !IsContainerNameSetting(segment)));
+        }
+
+        private static bool IsContainerNameSetting(string segment)
+        {
+            return segment.Trim().StartsWith(ContainerNameSetting, StringComparison.OrdinalIgnoreCase);
         }
 
         public static BlobConnectionType GetConnectionType(string connection)

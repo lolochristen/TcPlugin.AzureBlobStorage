@@ -15,6 +15,7 @@ namespace TcPlugin.AzureBlobStorage.Details
             return new PropertySheet("Connection " + name)
                 .Add("Name", name)
                 .Add("Type", ConnectionStore.GetConnectionType(connection).ToString())
+                .Add("Container", ConnectionStore.GetScopedContainer(connection))
                 .Add("Connection", PropertyFormat.MaskSecrets(connection));
         }
 

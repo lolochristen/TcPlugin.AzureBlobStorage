@@ -62,6 +62,7 @@ Supported formats:
 | Format | Example | Authentication |
 |---|---|---|
 | Connection string | `DefaultEndpointsProtocol=https;AccountName=…;AccountKey=…` | Account key or SAS |
+| Connection string for one container | `…;BlobEndpoint=…;ContainerName=<container>` (as written by .NET Aspire) | Account key or SAS |
 | Account SAS URL | `https://<account>.blob.core.windows.net/?sv=…&sig=…` | SAS |
 | Container SAS URL | `https://<account>.blob.core.windows.net/<container>?sv=…&sig=…` | SAS |
 | Account URL | `https://<account>.blob.core.windows.net/` | Your Azure sign-in |

@@ -19,8 +19,28 @@ namespace TcPlugin.AzureBlobStorage.Test
         }
 
         [TestMethod]
+        [DataRow("AccountName=a;AccountKey=a2V5;BlobEndpoint=http://x/a;;ContainerName=package-blob", "package-blob")]
+        [DataRow("AccountName=a;containername=package-blob;AccountKey=a2V5", "package-blob")]
+        [DataRow("AccountName=a;AccountKey=a2V5;ContainerName=", null)]
+        [DataRow("AccountName=a;AccountKey=a2V5", null)]
+        [DataRow("https://account.blob.core.windows.net/container?sv=2022&sig=abc", "container")]
+        [DataRow("https://account.blob.core.windows.net/", null)]
+        public void GetScopedContainer(string connection, string expected)
+        {
+            Assert.AreEqual(expected, ConnectionStore.GetScopedContainer(connection));
+        }
+
+        [TestMethod]
+        public void GetSdkConnectionString_RemovesOnlyContainerName()
+        {
+            Assert.AreEqual("AccountName=a;AccountKey=a2V5;BlobEndpoint=http://x/a;",
+                ConnectionStore.GetSdkConnectionString("AccountName=a;AccountKey=a2V5;BlobEndpoint=http://x/a;;ContainerName=package-blob"));
+        }
+
+        [TestMethod]
         [DataRow("https://account.blob.core.windows.net/")]
         [DataRow("AccountName=account;AccountKey=a2V5;DefaultEndpointsProtocol=http;BlobEndpoint=http://127.0.0.1:10000/account;")]
+        [DataRow("DefaultEndpointsProtocol=http;AccountName=account;AccountKey=a2V5;BlobEndpoint=http://127.0.0.1:55344/account;;ContainerName=package-blob")]
         public void Validate_AcceptsUsableConnections(string connection)
         {
             ConnectionStore.Validate(connection);
@@ -28,6 +48,7 @@ namespace TcPlugin.AzureBlobStorage.Test
 
         [TestMethod]
         [DataRow("AccountntName=account;AccountKey=a2V5;BlobEndpoint=http://127.0.0.1:10000/account;")]
+        [DataRow("AccountName=account;AccountKey=a2V5;BlobEndpoint=http://127.0.0.1:10000/account;Foo=bar")]
         [DataRow("not a connection string")]
         public void Validate_RejectsInvalidConnectionStrings(string connection)
         {

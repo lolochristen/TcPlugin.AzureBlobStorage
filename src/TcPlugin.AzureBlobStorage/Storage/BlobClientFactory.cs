@@ -46,7 +46,7 @@ namespace TcPlugin.AzureBlobStorage.Storage
                 case BlobConnectionType.ContainerUrlWithSAS:
                     return new BlobServiceClient(new Uri(connection), options);
                 default:
-                    return new BlobServiceClient(connection, options);
+                    return new BlobServiceClient(ConnectionStore.GetSdkConnectionString(connection), options);
             }
         }
 

@@ -304,12 +304,10 @@ namespace TcPlugin.AzureBlobStorage
         {
             if (path.IsConnectionPath)
             {
-                var connection = _connections.Get(path.AccountName);
-                var connectionType = ConnectionStore.GetConnectionType(connection);
-
-                if (connectionType is BlobConnectionType.ContainerUrl or BlobConnectionType.ContainerUrlWithSAS)
+                var scopedContainer = ConnectionStore.GetScopedContainer(_connections.Get(path.AccountName));
+                if (scopedContainer != null)
                 {
-                    return new[] { new FindData(new Uri(connection).AbsolutePath.Trim('/'), FileAttributes.Directory) };
+                    return new[] { new FindData(scopedContainer, FileAttributes.Directory) };
                 }
             }
 
