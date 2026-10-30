@@ -1,6 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
 using Azure;
+using Azure.Identity;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using TcPlugin.AzureBlobStorage.Storage;
 
@@ -10,7 +15,7 @@ namespace TcPlugin.AzureBlobStorage.Test
     public class StorageErrorTest
     {
         [TestMethod]
-        public void ServiceError_UsesFirstLineOnly()
+        public void UnknownServiceError_UsesFirstLineOnly()
         {
             var error = new RequestFailedException(400, "The API version is not supported.\nRequestId:123\nHeaders: secret");
 
@@ -18,12 +23,43 @@ namespace TcPlugin.AzureBlobStorage.Test
         }
 
         [TestMethod]
-        public void TransportError_UsesInnermostReason()
+        [DataRow(401, "AuthenticationFailed", "Not authorized")]
+        [DataRow(403, "AuthorizationPermissionMismatch", "Access denied")]
+        [DataRow(404, "BlobNotFound", "does not exist")]
+        [DataRow(409, "ContainerAlreadyExists", "already exists")]
+        [DataRow(409, "ContainerBeingDeleted", "being deleted")]
+        [DataRow(400, "OutOfRangeInput", "3-63 characters")]
+        [DataRow(400, "InvalidResourceName", "3-63 characters")]
+        public void KnownServiceError_IsExplained(int status, string errorCode, string expected)
+        {
+            var error = new RequestFailedException(status, "raw service text\nRequestId:123", errorCode, null);
+
+            var message = StorageError.Describe(error);
+
+            StringAssert.Contains(message, expected);
+            Assert.IsFalse(message.Contains("RequestId"), message);
+        }
+
+        [TestMethod]
+        public void UnreachableEndpoint_IsExplained()
+        {
+            var refused = new SocketException((int)SocketError.ConnectionRefused);
+            var error = new AggregateException("Retry failed after 4 tries.", new RequestFailedException("Unable to connect.", refused));
+
+            StringAssert.Contains(StorageError.Describe(error), "Cannot reach the storage endpoint");
+        }
+
+        [TestMethod]
+        public void FailedTlsHandshake_IsExplained()
         {
             var handshake = new IOException("The handshake failed due to an unexpected packet format.");
-            var error = new RequestFailedException("The underlying connection was closed.", new InvalidOperationException("send failed", handshake));
+            var web = new WebException("The underlying connection was closed.", handshake, WebExceptionStatus.SendFailure, null);
+            var error = new AggregateException(new RequestFailedException("The underlying connection was closed.", web));
 
-            Assert.AreEqual("The handshake failed due to an unexpected packet format.", StorageError.Describe(error));
+            var message = StorageError.Describe(error);
+
+            StringAssert.Contains(message, "secure connection");
+            StringAssert.Contains(message, "handshake failed");
         }
 
         [TestMethod]
@@ -35,22 +71,60 @@ namespace TcPlugin.AzureBlobStorage.Test
         }
 
         [TestMethod]
-        public void RetriedTransportError_UsesInnermostReason()
+        public void FailedSignIn_ExplainsHowToSignIn()
         {
-            var refused = new IOException("Connection refused.");
-            var error = new AggregateException("Retry failed after 4 tries.", new RequestFailedException("Unable to connect.", refused));
+            var message = StorageError.Describe(new CredentialUnavailableException("DefaultAzureCredential failed.\nlong details"));
 
-            Assert.AreEqual("Connection refused.", StorageError.Describe(error));
+            StringAssert.Contains(message, "az login");
+            StringAssert.Contains(message, "Connect-AzAccount");
+            Assert.IsFalse(message.Contains("long details"), message);
         }
 
         [TestMethod]
-        public void IsHandled_OnlyForExpectedErrors()
+        public void ManagementRequestFailure_IsNamed()
         {
-            Assert.IsTrue(StorageError.IsHandled(new RequestFailedException("failed")));
-            Assert.IsTrue(StorageError.IsHandled(new FormatException()));
-            Assert.IsTrue(StorageError.IsHandled(new AggregateException(new RequestFailedException("failed"))));
-            Assert.IsFalse(StorageError.IsHandled(new AggregateException(new InvalidOperationException())));
-            Assert.IsFalse(StorageError.IsHandled(new InvalidOperationException()));
+            var message = StorageError.Describe(new HttpRequestException("Response status code does not indicate success: 403 (Forbidden)."));
+
+            StringAssert.Contains(message, "Azure Resource Manager");
+            StringAssert.Contains(message, "403");
+        }
+
+        [TestMethod]
+        public void UnknownConnection_IsExplained()
+        {
+            StringAssert.Contains(StorageError.Describe(new KeyNotFoundException()), "no longer exists");
+        }
+
+        [TestMethod]
+        public void LocalFileError_KeepsItsMessage()
+        {
+            var message = "The process cannot access the file 'C:\\a.txt'.";
+
+            Assert.AreEqual(message, StorageError.Describe(new IOException(message)));
+        }
+
+        [TestMethod]
+        public void UnexpectedError_ShowsNoStackTrace()
+        {
+            Exception error;
+            try
+            {
+                throw new InvalidOperationException("Something odd.");
+            }
+            catch (Exception exp)
+            {
+                error = exp;
+            }
+
+            Assert.AreEqual("Unexpected error: Something odd.", StorageError.Describe(error));
+        }
+
+        [TestMethod]
+        public void IsCancellation_SeesThroughAggregates()
+        {
+            Assert.IsTrue(StorageError.IsCancellation(new OperationCanceledException()));
+            Assert.IsTrue(StorageError.IsCancellation(new AggregateException(new OperationCanceledException())));
+            Assert.IsFalse(StorageError.IsCancellation(new IOException()));
         }
     }
 }

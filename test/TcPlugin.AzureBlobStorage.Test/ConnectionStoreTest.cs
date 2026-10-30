@@ -17,5 +17,21 @@ namespace TcPlugin.AzureBlobStorage.Test
         {
             Assert.AreEqual(expected, ConnectionStore.GetConnectionType(connection));
         }
+
+        [TestMethod]
+        [DataRow("https://account.blob.core.windows.net/")]
+        [DataRow("AccountName=account;AccountKey=a2V5;DefaultEndpointsProtocol=http;BlobEndpoint=http://127.0.0.1:10000/account;")]
+        public void Validate_AcceptsUsableConnections(string connection)
+        {
+            ConnectionStore.Validate(connection);
+        }
+
+        [TestMethod]
+        [DataRow("AccountntName=account;AccountKey=a2V5;BlobEndpoint=http://127.0.0.1:10000/account;")]
+        [DataRow("not a connection string")]
+        public void Validate_RejectsInvalidConnectionStrings(string connection)
+        {
+            Assert.ThrowsExactly<System.FormatException>(() => ConnectionStore.Validate(connection));
+        }
     }
 }

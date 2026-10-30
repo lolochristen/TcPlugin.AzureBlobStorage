@@ -27,9 +27,11 @@ namespace TcPlugin.AzureBlobStorage.Storage
 
         public BlobServiceClient GetServiceClient(BlobStoragePath path)
         {
+            var options = CreateOptions();
+
             if (!path.IsConnectionPath)
             {
-                return new BlobServiceClient(GetAccountUri(path.AccountName), _credential);
+                return new BlobServiceClient(GetAccountUri(path.AccountName), _credential, options);
             }
 
             var connection = _connections.Get(path.AccountName);
@@ -37,15 +39,28 @@ namespace TcPlugin.AzureBlobStorage.Storage
             switch (ConnectionStore.GetConnectionType(connection))
             {
                 case BlobConnectionType.ServiceUrl:
-                    return new BlobServiceClient(new Uri(connection), _credential);
+                    return new BlobServiceClient(new Uri(connection), _credential, options);
                 case BlobConnectionType.ContainerUrl:
-                    return new BlobServiceClient(new Uri(new Uri(connection).GetLeftPart(UriPartial.Authority)), _credential);
+                    return new BlobServiceClient(new Uri(new Uri(connection).GetLeftPart(UriPartial.Authority)), _credential, options);
                 case BlobConnectionType.ServiceUrlWithSAS:
                 case BlobConnectionType.ContainerUrlWithSAS:
-                    return new BlobServiceClient(new Uri(connection));
+                    return new BlobServiceClient(new Uri(connection), options);
                 default:
-                    return new BlobServiceClient(connection);
+                    return new BlobServiceClient(connection, options);
             }
+        }
+
+        /// <summary>
+        ///     TC waits for most calls on its UI thread, so a failure has to surface quickly. The SDK's default retries
+        ///     take 35-40 seconds on an unreachable endpoint.
+        /// </summary>
+        internal static BlobClientOptions CreateOptions()
+        {
+            var options = new BlobClientOptions();
+            options.Retry.MaxRetries = 2;
+            options.Retry.Delay = TimeSpan.FromMilliseconds(500);
+            options.Retry.MaxDelay = TimeSpan.FromSeconds(2);
+            return options;
         }
 
         public BlobContainerClient GetContainerClient(BlobStoragePath path)
@@ -74,7 +89,7 @@ namespace TcPlugin.AzureBlobStorage.Storage
 
                 if (connectionType is BlobConnectionType.ContainerUrl or BlobConnectionType.ContainerUrlWithSAS)
                 {
-                    return new BlobContainerClient(new Uri(connection));
+                    return new BlobContainerClient(new Uri(connection), CreateOptions());
                 }
             }
 

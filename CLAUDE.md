@@ -18,13 +18,15 @@ dotnet test test/TcPlugin.AzureBlobStorage.Test --no-build --filter "FullyQualif
 
 - `Directory.Build.props` sets `TreatWarningsAsErrors=true` (CS1591 and CS0618 suppressed). MSTest analyzer findings in the test project also fail the build.
 - The plugin project outputs to the repo-level `bin/net480`. The `TcBuild` package merges the assemblies into the native `.wfx`/`.wfx64` wrappers and builds a TC installer zip. The custom `DeployPlugin` target unzips it into `tc/Plugins/wfx/TcPlugin.AzureBlobStorage`.
-- `tc/` is a portable Total Commander install for debugging; the `FsAzureStorage` launch profile starts `tc/TOTALCMD64.EXE`. Restart TC to pick up a rebuilt plugin.
+- `tc/` is a portable Total Commander install for debugging; the `FsAzureStorage` launch profile starts `tc/TOTALCMD64.EXE`. Close it before building: while it runs, the plugin files are locked and `DeployPlugin` fails the build with MSB3936 (the plugin itself still compiles). To build and run the tests anyway, build the test project with `-p:BuildProjectReferences=false`.
 
 ## Architecture
 
 The plugin is built on `TcPluginBase` (brought in by `TcBuild`). TC callbacks are synchronous or return a `Task`; sync callbacks block on async operations with `.Result`.
 
 - `AzureBlobFsPlugin` (`FsPlugin`) is the entry point. It stays a thin mapping from TC callbacks (list, get/put, mkdir/rmdir, rename/move, delete, properties, icons) to `BlobFileSystem`.
+  - Errors are handled here and nowhere else: `BlobFileSystem` lets exceptions propagate, and each callback catches them and shows `Storage/StorageError.Describe` through `Prompt.MsgOk`. `ShowErrorDialog` is off, so `TcPluginBase`'s exception window never appears. Bulk operations (transfers, delete) go through `Storage/ErrorThrottle` because TC reports each failed file itself. Transfers override the sync `GetFile`/`PutFile` so the dialog runs on TC's calling thread, not in the async continuation.
+  - A listing that returns `null` keeps TC out of the directory; an empty directory must throw `NoMoreFilesException`.
 - `AzureBlobContentPlugin` (`ContentPlugin`) builds its columns by reflecting over `BlobItemProperties` (see `BlobContentField`). Values come from a properties cache that `BlobFileSystem` fills while listing a directory, so the column plugin never calls Azure.
 - `BlobFileSystem` holds the file operations and wires together the components below.
   - `Paths/BlobStoragePath`: parses paths and identifies which kind of path it is (see below).
@@ -32,7 +34,7 @@ The plugin is built on `TcPluginBase` (brought in by `TcBuild`). TC callbacks ar
   - `Connections/ConnectionStore`: saved connections, plus `GetConnectionType` to classify a connection string or URL.
   - `Authentication/AzureCredentialProvider`: a single `TokenCredential` shared by every client. After a 401 it can switch to an interactive browser login once, without recreating the clients.
   - `Management/AzureResourceManagerClient`: raw ARM REST calls for tenants, subscriptions and storage accounts, with cached name→id lookups.
-  - `Storage/BlobClientFactory`: builds service, container and blob clients for a path. Container clients are cached by `ContainerPath`, and the cache is cleared when connections change. `TryGet*` methods return null when no client can be created.
+  - `Storage/BlobClientFactory`: builds service, container and blob clients for a path. Container clients are cached by `ContainerPath`, and the cache is cleared when connections change. `TryGet*` methods return null when no client can be created. Every client must use `CreateOptions`, which keeps SDK retries short because TC waits for most calls.
   - `Storage/PercentProgress`: turns transferred bytes into TC progress percentages, reported synchronously and only when the value changes.
 
 ### Path model (`BlobStoragePath`)

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Azure.Storage.Blobs;
 
 namespace TcPlugin.AzureBlobStorage.Connections
 {
@@ -59,6 +60,15 @@ namespace TcPlugin.AzureBlobStorage.Connections
             var decrypted = ProtectedData.Unprotect(File.ReadAllBytes(SettingsPath), null, DataProtectionScope.CurrentUser);
             _connections = JsonSerializer.Deserialize<Dictionary<string, string>>(decrypted) ?? new Dictionary<string, string>();
             Changed?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <exception cref="FormatException">The connection is neither a URL nor a valid connection string.</exception>
+        public static void Validate(string connection)
+        {
+            if (!Uri.TryCreate(connection, UriKind.Absolute, out _))
+            {
+                _ = new BlobServiceClient(connection);
+            }
         }
 
         public static BlobConnectionType GetConnectionType(string connection)

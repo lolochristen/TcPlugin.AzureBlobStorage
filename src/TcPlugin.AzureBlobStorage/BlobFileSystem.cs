@@ -48,8 +48,10 @@ namespace TcPlugin.AzureBlobStorage
             _connections.Load();
         }
 
+        /// <exception cref="FormatException">The connection is not valid; nothing is saved.</exception>
         public void AddOrUpdateConnection(string name, string connection)
         {
+            ConnectionStore.Validate(connection);
             _connections.AddOrUpdate(name.TrimStart(BlobStoragePath.ConnectionPrefix[0]), connection);
         }
 
@@ -63,15 +65,30 @@ namespace TcPlugin.AzureBlobStorage
             _connections.Remove(name);
         }
 
-        public IEnumerable<FindData> ListDirectory(BlobStoragePath path)
+        /// <summary>
+        ///     Lists the root. Saved connections stay reachable when Azure can't be reached or nobody is signed in,
+        ///     so that failure is only reported.
+        /// </summary>
+        public IEnumerable<FindData> ListRoot(Action<Exception> onTenantsFailed)
         {
-            if (path.Level == 0)
+            var items = new List<FindData>();
+
+            try
             {
-                return ToDirectories(_resourceManager.GetTenants())
-                    .Concat(ToDirectories(_connections.Names.Select(name => BlobStoragePath.ConnectionPrefix + name)))
-                    .Append(new FindData(BlobStoragePath.ConnectionsRootName, FileAttributes.Directory));
+                items.AddRange(ToDirectories(_resourceManager.GetTenants()));
+            }
+            catch (Exception exp)
+            {
+                onTenantsFailed(exp);
             }
 
+            items.AddRange(ToDirectories(_connections.Names.Select(name => BlobStoragePath.ConnectionPrefix + name)));
+            items.Add(new FindData(BlobStoragePath.ConnectionsRootName, FileAttributes.Directory));
+            return items;
+        }
+
+        public IEnumerable<FindData> ListDirectory(BlobStoragePath path)
+        {
             if (path.Level == 1 && path.IsConnectionsPath)
             {
                 return _connections.Names.Select(p => new FindData(p, FileAttributes.Normal));
@@ -108,15 +125,8 @@ namespace TcPlugin.AzureBlobStorage
 
             if (directory.IsContainerPath)
             {
-                try
-                {
-                    _clients.GetServiceClient(directory).CreateBlobContainer(directory.ContainerName);
-                    return true;
-                }
-                catch (Exception exp) when (StorageError.IsHandled(exp))
-                {
-                    ShowError(exp);
-                }
+                _clients.GetServiceClient(directory).CreateBlobContainer(directory.ContainerName);
+                return true;
             }
 
             return false;
@@ -259,25 +269,18 @@ namespace TcPlugin.AzureBlobStorage
                 return false;
             }
 
-            try
-            {
-                var blob = _clients.TryGetBlobClient(path);
-                if (blob is null)
-                {
-                    return false;
-                }
-
-                var properties = blob.GetProperties().Value;
-                var json = JsonSerializer.Serialize(properties,
-                    new JsonSerializerOptions { WriteIndented = true, Converters = { new JsonStringEnumConverter() } });
-
-                MessageBox.Show(json, "Properties " + path.BlobPath, MessageBoxButtons.OK);
-                return true;
-            }
-            catch (RequestFailedException)
+            var blob = _clients.TryGetBlobClient(path);
+            if (blob is null)
             {
                 return false;
             }
+
+            var properties = blob.GetProperties().Value;
+            var json = JsonSerializer.Serialize(properties,
+                new JsonSerializerOptions { WriteIndented = true, Converters = { new JsonStringEnumConverter() } });
+
+            MessageBox.Show(json, "Properties " + path.BlobPath, MessageBoxButtons.OK);
+            return true;
         }
 
         private async Task<FileSystemExitCode> CopyBlob(BlobStoragePath source, BlobStoragePath destination, bool overwrite,
@@ -333,32 +336,13 @@ namespace TcPlugin.AzureBlobStorage
                         container.Properties.LastModified.LocalDateTime))
                     .ToList();
             }
-            catch (Exception exp) when (StorageError.IsHandled(exp))
+            catch (RequestFailedException exp) when (exp.Status == 401 && _credential.TrySwitchToInteractiveLogin())
             {
-                if (exp is RequestFailedException { Status: 401 } && _credential.TrySwitchToInteractiveLogin())
-                {
-                    return GetContainers(path);
-                }
-
-                ShowError(exp);
-                return null;
+                return GetContainers(path);
             }
         }
 
         private IEnumerable<FindData> GetBlobs(BlobStoragePath path)
-        {
-            try
-            {
-                return ListBlobs(path);
-            }
-            catch (Exception exp) when (StorageError.IsHandled(exp))
-            {
-                ShowError(exp);
-                return null;
-            }
-        }
-
-        private IEnumerable<FindData> ListBlobs(BlobStoragePath path)
         {
             var prefix = path.BlobPath;
             if (prefix.Length > 0)
@@ -392,11 +376,6 @@ namespace TcPlugin.AzureBlobStorage
             }
 
             return _pathCache.WithCached(path, list);
-        }
-
-        private static void ShowError(Exception exception)
-        {
-            MessageBox.Show($"Cannot connect to storage: {StorageError.Describe(exception)}", "Azure Error", MessageBoxButtons.OK);
         }
 
         private static async Task<BlobProperties> GetPropertiesOrDefault(BlobClient blob, CancellationToken token)

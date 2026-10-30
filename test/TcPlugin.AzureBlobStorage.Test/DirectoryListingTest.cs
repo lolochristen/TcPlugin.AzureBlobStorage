@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -11,19 +12,13 @@ namespace TcPlugin.AzureBlobStorage.Test
         [TestMethod]
         public void EmptyDirectory_SignalsNoMoreFiles()
         {
-            Assert.ThrowsExactly<NoMoreFilesException>(() => AzureBlobFsPlugin.ToListing(Enumerable.Empty<FindData>()));
-        }
-
-        [TestMethod]
-        public void FailedListing_StaysNull()
-        {
-            Assert.IsNull(AzureBlobFsPlugin.ToListing(null));
+            Assert.ThrowsExactly<NoMoreFilesException>(() => AzureBlobFsPlugin.ToListing(new List<FindData>()));
         }
 
         [TestMethod]
         public void Items_AreReturned()
         {
-            var listing = AzureBlobFsPlugin.ToListing(new[] { new FindData("container", FileAttributes.Directory) });
+            var listing = AzureBlobFsPlugin.ToListing(new List<FindData> { new FindData("container", FileAttributes.Directory) });
 
             Assert.AreEqual("container", listing.Single().FileName);
         }
