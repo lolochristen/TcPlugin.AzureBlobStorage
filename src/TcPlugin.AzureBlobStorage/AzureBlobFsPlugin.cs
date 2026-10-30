@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -40,7 +41,22 @@ namespace TcPlugin.AzureBlobStorage
 
         public override IEnumerable<FindData> GetFiles(RemotePath path)
         {
-            return _fileSystem.ListDirectory(path);
+            return ToListing(_fileSystem.ListDirectory(path));
+        }
+
+        /// <summary>
+        ///     TC only opens an empty directory when the listing reports no more files; any other empty result counts
+        ///     as a failure. A null listing (the error has already been shown) therefore keeps TC out of the directory.
+        /// </summary>
+        internal static IEnumerable<FindData> ToListing(IEnumerable<FindData> items)
+        {
+            var listing = items?.ToList();
+            if (listing?.Count == 0)
+            {
+                throw new NoMoreFilesException();
+            }
+
+            return listing;
         }
 
         public override bool MkDir(RemotePath dir)

@@ -108,8 +108,15 @@ namespace TcPlugin.AzureBlobStorage
 
             if (directory.IsContainerPath)
             {
-                _clients.GetServiceClient(directory).CreateBlobContainer(directory.ContainerName);
-                return true;
+                try
+                {
+                    _clients.GetServiceClient(directory).CreateBlobContainer(directory.ContainerName);
+                    return true;
+                }
+                catch (Exception exp) when (StorageError.IsHandled(exp))
+                {
+                    ShowError(exp);
+                }
             }
 
             return false;
@@ -326,19 +333,32 @@ namespace TcPlugin.AzureBlobStorage
                         container.Properties.LastModified.LocalDateTime))
                     .ToList();
             }
-            catch (RequestFailedException exp)
+            catch (Exception exp) when (StorageError.IsHandled(exp))
             {
-                if (exp.Status == 401 && _credential.TrySwitchToInteractiveLogin())
+                if (exp is RequestFailedException { Status: 401 } && _credential.TrySwitchToInteractiveLogin())
                 {
                     return GetContainers(path);
                 }
 
-                MessageBox.Show($"Cannot connect to Azure {exp.ErrorCode}", "Azure Error", MessageBoxButtons.OK);
-                return Enumerable.Empty<FindData>();
+                ShowError(exp);
+                return null;
             }
         }
 
         private IEnumerable<FindData> GetBlobs(BlobStoragePath path)
+        {
+            try
+            {
+                return ListBlobs(path);
+            }
+            catch (Exception exp) when (StorageError.IsHandled(exp))
+            {
+                ShowError(exp);
+                return null;
+            }
+        }
+
+        private IEnumerable<FindData> ListBlobs(BlobStoragePath path)
         {
             var prefix = path.BlobPath;
             if (prefix.Length > 0)
@@ -371,9 +391,12 @@ namespace TcPlugin.AzureBlobStorage
                 _blobPropertiesCache[NormalizeCacheKey(path.Path + "/" + findData.FileName)] = blobProperties;
             }
 
-            return _pathCache
-                .WithCached(path, list)
-                .DefaultIfEmpty(new FindData("..", FileAttributes.Directory));
+            return _pathCache.WithCached(path, list);
+        }
+
+        private static void ShowError(Exception exception)
+        {
+            MessageBox.Show($"Cannot connect to storage: {StorageError.Describe(exception)}", "Azure Error", MessageBoxButtons.OK);
         }
 
         private static async Task<BlobProperties> GetPropertiesOrDefault(BlobClient blob, CancellationToken token)
